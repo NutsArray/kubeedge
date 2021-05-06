@@ -1,19 +1,25 @@
 # KubeEdge
 [![Build Status](https://travis-ci.org/kubeedge/kubeedge.svg?branch=master)](https://travis-ci.org/kubeedge/kubeedge)
 [![Go Report Card](https://goreportcard.com/badge/github.com/kubeedge/kubeedge)](https://goreportcard.com/report/github.com/kubeedge/kubeedge)
-[![LICENSE](https://img.shields.io/github/license/kubeedge/kubeedge.svg?style=flat-square)](https://github.com/kubeedge/kubeedge/blob/master/LICENSE)
+[![LICENSE](https://img.shields.io/github/license/kubeedge/kubeedge.svg?style=flat-square)](/LICENSE)
 [![Releases](https://img.shields.io/github/release/kubeedge/kubeedge/all.svg?style=flat-square)](https://github.com/kubeedge/kubeedge/releases)
 [![Documentation Status](https://readthedocs.org/projects/kubeedge/badge/?version=latest)](https://kubeedge.readthedocs.io/en/latest/?badge=latest)
 
 <img src="./docs/images/kubeedge-logo-only.png">
 
 KubeEdge is built upon Kubernetes and extends native containerized application orchestration and device management to hosts at the Edge.
-It consists of cloud part and edge part, provides core infrastructure support for networking, application deployment and metadata synchronization 
+It consists of cloud part and edge part, provides core infrastructure support for networking, application deployment and metadata synchronization
 between cloud and edge. It also supports **MQTT** which enables edge devices to access through edge nodes.
 
-With KubeEdge it is easy to get and deploy existing complicated machine learning, image recognition, event processing and other high level applications to the Edge. 
+With KubeEdge it is easy to get and deploy existing complicated machine learning, image recognition, event processing and other high level applications to the Edge.
 With business logic running at the Edge, much larger volumes of data can be secured & processed locally where the data is produced.
 With data processed at the Edge, the responsiveness is increased dramatically and data privacy is protected.
+
+KubeEdge is an incubation-level hosted project by the [Cloud Native Computing Foundation](https://cncf.io) (CNCF). KubeEdge incubation [announcement](https://www.cncf.io/blog/2020/09/16/toc-approves-kubeedge-as-incubating-project/) by CNCF.
+
+**Note**:
+
+The versions before *1.3* have not been supported, please try upgrade.
 
 ## Advantages
 
@@ -34,27 +40,27 @@ KubeEdge consists of cloud part and edge part.
 <img src="./docs/images/kubeedge_arch.png" width = "85%" align="center">
 </div>
 
-### Cloud Part
-- [CloudHub](https://github.com/kubeedge/kubeedge/blob/master/docs/modules/cloud/cloudhub.md): a web socket server responsible for watching changes at the cloud side, caching and sending messages to EdgeHub.
-- [EdgeController](https://github.com/kubeedge/kubeedge/blob/master/docs/modules/cloud/controller.md): an extended kubernetes controller which manages edge nodes and pods metadata so that the data can be targeted to a specific edge node.
-- [DeviceController](https://github.com/kubeedge/kubeedge/blob/master/docs/modules/cloud/device_controller.md): an extended kubernetes controller which manages devices so that the device metadata/status data can be synced between edge and cloud.
+### In the Cloud
+- [CloudHub](https://kubeedge.io/en/docs/architecture/cloud/cloudhub): a web socket server responsible for watching changes at the cloud side, caching and sending messages to EdgeHub.
+- [EdgeController](https://kubeedge.io/en/docs/architecture/cloud/edge_controller): an extended kubernetes controller which manages edge nodes and pods metadata so that the data can be targeted to a specific edge node.
+- [DeviceController](https://kubeedge.io/en/docs/architecture/cloud/device_controller): an extended kubernetes controller which manages devices so that the device metadata/status data can be synced between edge and cloud.
 
 
-### Edge Part
-- [EdgeHub](https://github.com/kubeedge/kubeedge/blob/master/docs/modules/edge/edgehub.md): a web socket client responsible for interacting with Cloud Service for the edge computing (like Edge Controller as in the KubeEdge Architecture). This includes syncing cloud-side resource updates to the edge, and reporting edge-side host and device status changes to the cloud.
-- [Edged](https://github.com/kubeedge/kubeedge/blob/master/docs/modules/edge/edged.md): an agent that runs on edge nodes and manages containerized applications.
-- [EventBus](https://github.com/kubeedge/kubeedge/blob/master/docs/modules/edge/eventbus.md): a MQTT client to interact with MQTT servers (mosquitto), offering publish and subscribe capabilities to other components.
-- ServiceBus: a HTTP client to interact with HTTP servers (REST), offering HTTP client capabilities to components of cloud to reach HTTP servers running at edge.
-- [DeviceTwin](https://github.com/kubeedge/kubeedge/blob/master/docs/modules/edge/devicetwin.md): responsible for storing device status and syncing device status to the cloud. It also provides query interfaces for applications.
-- [MetaManager](https://github.com/kubeedge/kubeedge/blob/master/docs/modules/edge/metamanager.md): the message processor between edged and edgehub. It is also responsible for storing/retrieving metadata to/from a lightweight database (SQLite).
+### On the Edge
+- [EdgeHub](https://kubeedge.io/en/docs/architecture/edge/edgehub): a web socket client responsible for interacting with Cloud Service for the edge computing (like Edge Controller as in the KubeEdge Architecture). This includes syncing cloud-side resource updates to the edge, and reporting edge-side host and device status changes to the cloud.
+- [Edged](https://kubeedge.io/en/docs/architecture/edge/edged): an agent that runs on edge nodes and manages containerized applications.
+- [EventBus](https://kubeedge.io/en/docs/architecture/edge/eventbus): a MQTT client to interact with MQTT servers (mosquitto), offering publish and subscribe capabilities to other components.
+- [ServiceBus](https://kubeedge.io/en/docs/architecture/edge/servicebus): a HTTP client to interact with HTTP servers (REST), offering HTTP client capabilities to components of cloud to reach HTTP servers running at edge.
+- [DeviceTwin](https://kubeedge.io/en/docs/architecture/edge/devicetwin): responsible for storing device status and syncing device status to the cloud. It also provides query interfaces for applications.
+- [MetaManager](https://kubeedge.io/en/docs/architecture/edge/metamanager): the message processor between edged and edgehub. It is also responsible for storing/retrieving metadata to/from a lightweight database (SQLite).
 
 ## Kubernetes compatibility
 
-|                        | Kubernetes 1.11 | Kubernetes 1.12 | Kubernetes 1.13 | Kubernetes 1.14 | Kubernetes 1.15 | Kubernetes 1.16 | Kubernetes 1.17 |
+|                        | Kubernetes 1.13 | Kubernetes 1.14 | Kubernetes 1.15 | Kubernetes 1.16 | Kubernetes 1.17 | Kubernetes 1.18 | Kubernetes 1.19 |
 |------------------------|-----------------|-----------------|-----------------|-----------------|-----------------|-----------------|-----------------|
-| KubeEdge 1.0           | ✓               | ✓               | ✓               | ✓              | ✓               | -               | -               |
-| KubeEdge 1.1           | ✓               | ✓               | ✓               | ✓               | ✓             | ✓               | ✓               |
-| KubeEdge 1.2           | ✓               | ✓               | ✓               | ✓               | ✓             | ✓               | ✓               |
+| KubeEdge 1.3           | ✓               | ✓               | ✓               | ✓               | ✓             | ✓               | ✓               |
+| KubeEdge 1.4           | ✓               | ✓               | ✓               | ✓               | ✓             | ✓               | ✓               |
+| KubeEdge 1.5           | ✓               | ✓               | ✓               | ✓               | ✓             | ✓               | ✓               |
 | KubeEdge HEAD (master) | ✓               | ✓               | ✓               | ✓               | ✓             | ✓               | ✓               |
 
 Key:
@@ -64,21 +70,15 @@ Key:
 
 ## Guides
 
-### User Guide
+Get start with this [doc](https://kubeedge.io/en/docs).
 
-See our documentation on [kubeedge.io](https://kubeedge.io).
+See our documentation on [kubeedge.io](https://kubeedge.io) for more details.
 
-**Quick Start** - Install KubeEdge with [keadm](./docs/setup/kubeedge_install_keadm.md).
-
-Try some examples of KubeEdge on [examples](https://github.com/kubeedge/examples).
-
-### Developer Guide
-
-Take a look at our [development guide], If you are interested in building and contributing KubeEdge.
+To learn deeply about KubeEdge, try some examples on [examples](https://github.com/kubeedge/examples).
 
 ## Roadmap
 
-* [2020 Q1 Roadmap](./docs/getting-started/roadmap.md#2020-q1-roadmap)
+* [2021 Roadmap](./docs/roadmap.md#roadmap)
 
 ## Meeting
 
@@ -96,11 +96,8 @@ Resources:
 
 ## Contact
 
-<!--
-We don't have a troubleshooting guide yet.  When we do, uncomment the following and add the link.
-If you need support, start with the [troubleshooting guide], and work your way through the process that we've outlined.
+If you need support, start with the [troubleshooting guide](https://kubeedge.io/en/docs/developer/troubleshooting), and work your way through the process that we've outlined.
 
--->
 If you have questions, feel free to reach out to us in the following ways:
 
 - [mailing list](https://groups.google.com/forum/#!forum/kubeedge)
@@ -110,12 +107,9 @@ If you have questions, feel free to reach out to us in the following ways:
 ## Contributing
 
 If you're interested in being a contributor and want to get involved in
-developing the KubeEdge code, please see [CONTRIBUTING](CONTRIBUTING.md) for
+developing the KubeEdge code, please see [CONTRIBUTING](./CONTRIBUTING.md) for
 details on submitting patches and the contribution workflow.
 
 ## License
 
 KubeEdge is under the Apache 2.0 license. See the [LICENSE](LICENSE) file for details.
-
-
-[development guide]: ./docs/setup/develop_kubeedge.md

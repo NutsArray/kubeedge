@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
 	"github.com/kubeedge/beehive/pkg/core/model"
@@ -37,7 +37,6 @@ func (dt *DeviceTwin) RegisterDTModule(name string) {
 	module.InitWorker(dt.DTContexts.CommChan[name], dt.DTContexts.ConfirmChan,
 		dt.HeartBeatToModule[name], dt.DTContexts)
 	dt.DTModules[name] = module
-
 }
 
 //distributeMsg distribute message to diff module
@@ -128,7 +127,6 @@ func SyncSqlite(context *dtcontext.DTContext) error {
 		}
 	}
 	return nil
-
 }
 
 //SyncDeviceFromSqlite sync device from sqlite
@@ -159,9 +157,7 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 		return err
 	}
 	attributes := make([]dtclient.DeviceAttr, 0)
-	for _, attr := range *deviceAttr {
-		attributes = append(attributes, attr)
-	}
+	attributes = append(attributes, *deviceAttr...)
 
 	deviceTwin, err := dtclient.QueryDeviceTwin("deviceid", deviceID)
 	if err != nil {
@@ -169,9 +165,7 @@ func SyncDeviceFromSqlite(context *dtcontext.DTContext, deviceID string) error {
 		return err
 	}
 	twins := make([]dtclient.DeviceTwin, 0)
-	for _, twin := range *deviceTwin {
-		twins = append(twins, twin)
-	}
+	twins = append(twins, *deviceTwin...)
 
 	context.DeviceList.Store(deviceID, &dttype.Device{
 		ID:          deviceID,
@@ -260,7 +254,6 @@ func classifyMsg(message *dttype.DTMessage) bool {
 			return true
 		}
 		return false
-
 	} else if strings.Compare(msgSource, "edgehub") == 0 {
 		if strings.Compare(message.Msg.Router.Resource, "node/connection") == 0 {
 			message.Action = dtcommon.LifeCycle
@@ -272,7 +265,6 @@ func classifyMsg(message *dttype.DTMessage) bool {
 }
 
 func (dt *DeviceTwin) runDeviceTwin() {
-
 	moduleNames := []string{dtcommon.MemModule, dtcommon.TwinModule, dtcommon.DeviceModule, dtcommon.CommModule}
 	for _, v := range moduleNames {
 		dt.RegisterDTModule(v)
@@ -285,7 +277,6 @@ func (dt *DeviceTwin) runDeviceTwin() {
 				klog.Warning("Stop DeviceTwin ModulesContext Receive loop")
 				return
 			default:
-
 			}
 			if msg, ok := beehiveContext.Receive("twin"); ok == nil {
 				klog.Info("DeviceTwin receive msg")

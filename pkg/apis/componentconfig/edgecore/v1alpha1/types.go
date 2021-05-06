@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	"time"
 
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	metaconfig "github.com/kubeedge/kubeedge/pkg/apis/componentconfig/meta/v1alpha1"
@@ -74,7 +75,7 @@ type DataBase struct {
 	// default "default"
 	AliasName string `json:"aliasName,omitempty"`
 	// DataSource indicates the data source path
-	// default "/var/lib/kubeedge/edge.db"
+	// default "/var/lib/kubeedge/edgecore.db"
 	DataSource string `json:"dataSource,omitempty"`
 }
 
@@ -113,6 +114,12 @@ type Edged struct {
 	// if set to false (for debugging etc.), skip checking other edged configs.
 	// default true
 	Enable bool `json:"enable,omitempty"`
+	// Labels indicates current node labels
+	Labels map[string]string `json:"labels,omitempty"`
+	// Annotations indicates current node annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Taints indicates current node taints
+	Taints []v1.Taint `json:"taints,omitempty"`
 	// NodeStatusUpdateFrequency indicates node status update frequency (second)
 	// default 10
 	NodeStatusUpdateFrequency int32 `json:"nodeStatusUpdateFrequency,omitempty"`
@@ -165,6 +172,7 @@ type Edged struct {
 	RegisterNodeNamespace string `json:"registerNodeNamespace,omitempty"`
 	// InterfaceName indicates interface name
 	// default "eth0"
+	// DEPRECATED after v1.5
 	InterfaceName string `json:"interfaceName,omitempty"`
 	// ConcurrentConsumers indicates concurrent consumers for pod add or remove operation
 	// default 5
@@ -254,10 +262,10 @@ type EdgeHub struct {
 	// default "/etc/kubeedge/ca/rootCA.crt"
 	TLSCAFile string `json:"tlsCaFile,omitempty"`
 	// TLSCertFile indicates the file containing x509 Certificate for HTTPS
-	// default "/etc/kubeedge/certs/edge.crt"
+	// default "/etc/kubeedge/certs/server.crt"
 	TLSCertFile string `json:"tlsCertFile,omitempty"`
 	// TLSPrivateKeyFile indicates the file containing x509 private key matching tlsCertFile
-	// default "/etc/kubeedge/certs/edge.key"
+	// default "/etc/kubeedge/certs/server.key"
 	TLSPrivateKeyFile string `json:"tlsPrivateKeyFile,omitempty"`
 	// Quic indicates quic config for EdgeHub module
 	// Optional if websocket is configured
@@ -269,12 +277,15 @@ type EdgeHub struct {
 	Token string `json:"token"`
 	// HTTPServer indicates the server for edge to apply for the certificate.
 	HTTPServer string `json:"httpServer,omitempty"`
+	// RotateCertificates indicates whether edge certificate can be rotated
+	// default true
+	RotateCertificates bool `json:"rotateCertificates,omitempty"`
 }
 
 // EdgeHubQUIC indicates the quic client config
 type EdgeHubQUIC struct {
 	// Enable indicates whether enable this protocol
-	// default true
+	// default false
 	Enable bool `json:"enable,omitempty"`
 	// HandshakeTimeout indicates hand shake timeout (second)
 	// default 30
@@ -341,6 +352,24 @@ type EventBus struct {
 	// +Required
 	// default: 2
 	MqttMode MqttMode `json:"mqttMode"`
+	// Tls indicates tls config for EventBus module
+	TLS *EventBusTLS `json:"eventBusTLS,omitempty"`
+}
+
+// EventBusTLS indicates the EventBus tls config with MQTT broker
+type EventBusTLS struct {
+	// Enable indicates whether enable tls connection
+	// default false
+	Enable bool `json:"enable,omitempty"`
+	// TLSMqttCAFile sets ca file path
+	// default "/etc/kubeedge/ca/rootCA.crt"
+	TLSMqttCAFile string `json:"tlsMqttCAFile,omitempty"`
+	// TLSMqttCertFile indicates the file containing x509 Certificate for HTTPS
+	// default "/etc/kubeedge/certs/server.crt"
+	TLSMqttCertFile string `json:"tlsMqttCertFile,omitempty"`
+	// TLSMqttPrivateKeyFile indicates the file containing x509 private key matching tlsMqttCertFile
+	// default "/etc/kubeedge/certs/server.key"
+	TLSMqttPrivateKeyFile string `json:"tlsMqttPrivateKeyFile,omitempty"`
 }
 
 // MetaManager indicates the MetaManager module config
@@ -354,7 +383,18 @@ type MetaManager struct {
 	// ContextSendModule indicates send module
 	ContextSendModule metaconfig.ModuleName `json:"contextSendModule,omitempty"`
 	// PodStatusSyncInterval indicates pod status sync
+	// default 60
 	PodStatusSyncInterval int32 `json:"podStatusSyncInterval,omitempty"`
+	// RemoteQueryTimeout indicates remote query timeout (second)
+	// default 60
+	RemoteQueryTimeout int32 `json:"remoteQueryTimeout,omitempty"`
+	// The config of MetaServer
+	MetaServer *MetaServer `json:"metaServer,omitempty"`
+}
+
+type MetaServer struct {
+	Enable bool `json:"enable,omitempty"`
+	Debug  bool `json:"debug,omitempty"`
 }
 
 // ServiceBus indicates the ServiceBus module config
@@ -388,12 +428,16 @@ type EdgeMesh struct {
 	// default true
 	Enable bool `json:"enable,omitempty"`
 	// lbStrategy indicates load balance strategy name
+	// default "RoundRobin"
 	LBStrategy string `json:"lbStrategy,omitempty"`
 	// ListenInterface indicates the listen interface of EdgeMesh
+	// default "docker0"
 	ListenInterface string `json:"listenInterface,omitempty"`
 	// SubNet indicates the subnet of EdgeMesh
+	// default "9.251.0.0/16"
 	SubNet string `json:"subNet,omitempty"`
 	// ListenPort indicates the listen port of EdgeMesh
+	// default 40001
 	ListenPort int `json:"listenPort,omitempty"`
 }
 
@@ -408,10 +452,10 @@ type EdgeStream struct {
 	TLSTunnelCAFile string `json:"tlsTunnelCAFile,omitempty"`
 
 	// TLSTunnelCertFile indicates the file containing x509 Certificate for HTTPS
-	// default /etc/kubeedge/certs/edge.crt
+	// default /etc/kubeedge/certs/server.crt
 	TLSTunnelCertFile string `json:"tlsTunnelCertFile,omitempty"`
 	// TLSTunnelPrivateKeyFile indicates the file containing x509 private key matching tlsCertFile
-	// default /etc/kubeedge/certs/edge.key
+	// default /etc/kubeedge/certs/server.key
 	TLSTunnelPrivateKeyFile string `json:"tlsTunnelPrivateKeyFile,omitempty"`
 
 	// HandshakeTimeout indicates handshake timeout (second)

@@ -20,99 +20,56 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-kubeedge::lint::cloud_lint() {
-  (
-    echo "lint cloud"
-    cd ${KUBEEDGE_ROOT}/cloud
-    golangci-lint run --skip-dirs 'pkg/client' --disable-all -E golint --deadline '10m' ./...
-    go vet ./... 
-  )
-}
+SED_CMD=""
 
-kubeedge::lint::edge_lint() {
-  (
-    echo "lint edge"
-    cd ${KUBEEDGE_ROOT}/edge
-    golangci-lint run --disable-all -E golint -E misspell --deadline '10m' ./...
-    go vet ./...
-  )
-}
-
-kubeedge::lint::keadm_lint() {
-  (
-    echo "lint keadm"
-    cd ${KUBEEDGE_ROOT}/keadm
-    golangci-lint run --deadline '10m' --disable-all -E golint ./...
-    go vet ./...
-  )
-}
-
-kubeedge::lint::bluetoothdevice_lint() {
-  (
-    echo "lint bluetoothdevice"
-    cd ${KUBEEDGE_ROOT}/mappers/bluetooth_mapper
-    golangci-lint run --disable-all -E golint --deadline '10m' ./...
-    go vet ./...
-  )
-}
-
-kubeedge::lint::global_lint() {
-  (
-    echo "checking gofmt repo-wide"
-    cd ${KUBEEDGE_ROOT}
-    golangci-lint run --disable-all -E gofmt --deadline '10m' ./...
-    go vet ./...
-  )
-}
-
-ALL_COMPONENTS_AND_LINT_FUNCTIONS=(
-  repo::::kubeedge::lint::global_lint
-  cloud::::kubeedge::lint::cloud_lint
-  edge::::kubeedge::lint::edge_lint
-  keadm::::kubeedge::lint::keadm_lint
-  bluetoothdevice::::kubeedge::lint::bluetoothdevice_lint
-)
-
-kubeedge::lint::get_lintfuntion_by_component() {
-  local key=$1
-  for cl in "${ALL_COMPONENTS_AND_LINT_FUNCTIONS[@]}" ; do
-    local component="${cl%%::::*}"
-    if [ "${component}" == "${key}" ]; then
-      local func="${cl##*::::}"
-      echo "${func}"
-      return
+if [[ "$OSTYPE" == "darwin"* ]]
+then
+    SED_CMD=`which gsed`
+    if [ -z $SED_CMD ]
+    then
+        echo "Please install gnu-sed (brew install gnu-sed)"
+        exit 1
     fi
-  done
-  echo "can not find component: $key"
-  exit 1
-}
-
-kubeedge::lint::get_all_lintfuntion() {
-  local -a funcs 
-  for cl in "${ALL_COMPONENTS_AND_LINT_FUNCTIONS[@]}" ; do
-    funcs+=("${cl##*::::}")
-  done
-  echo ${funcs[@]}
-}
-
-IFS=" " read -ra ALL_LINT_FUNCTIONS <<< "$(kubeedge::lint::get_all_lintfuntion)"
+elif [[ "$OSTYPE" == "linux"* ]]
+then
+    SED_CMD=`which sed`
+    if [ -z $SED_CMD ]
+    then
+        echo "Please install sed"
+        exit 1
+    fi
+else
+    echo "Unsupported OS $OSTYPE"
+    exit 1
+fi
 
 kubeedge::lint::check() {
-  echo "checking golang lint $@"
+    cd ${KUBEEDGE_ROOT}
+    echo "start lint ..."
+    set +o pipefail
+    echo "check any whitenoise ..."
+    # skip deleted files
+    if [[ "$OSTYPE" == "darwin"* ]]
+    then
+      git diff --cached --name-only --diff-filter=ACRMTU master | grep -Ev "externalversions|fake|vendor|images|adopters" | xargs $SED_CMD -i 's/[ \t]*$//'
+    elif [[ "$OSTYPE" == "linux"* ]]
+    then
+      git diff --cached --name-only --diff-filter=ACRMTU master | grep -Ev "externalversions|fake|vendor|images|adopters" | xargs --no-run-if-empty $SED_CMD -i 's/[ \t]*$//'
+    else
+      echo "Unsupported OS $OSTYPE"
+      exit 1
+    fi
 
-  cd ${KUBEEDGE_ROOT}
+    [[ $(git diff --name-only) ]] && {
+      echo "Some files have white noise issue, please run \`make lint\` to slove this issue"
+      return 1
+    }
+    set -o pipefail
 
-  local -a funcs=()
-  local arg
-  for arg in "$@"; do
-    funcs+=("$(kubeedge::lint::get_lintfuntion_by_component $arg)")
-  done
+    echo "check any issue by golangci-lint ..."
+    GOOS="linux" golangci-lint run -v
 
-  if [[ ${#funcs[@]} -eq 0 ]]; then
-    funcs+=("${ALL_LINT_FUNCTIONS[@]}")
-  fi
-
-  for f in ${funcs[@]}; do
-    $f
-  done
+    # only check format issue under staging dir
+    echo "check any issue under staging dir by gofmt ..."
+    gofmt -l -w staging
 }

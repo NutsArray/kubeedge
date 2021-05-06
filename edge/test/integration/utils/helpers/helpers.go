@@ -28,7 +28,7 @@ import (
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/onsi/gomega"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -266,7 +266,7 @@ func HandleAddAndDeleteDevice(operation, testMgrEndPoint string, device dttype.D
 		common.Fatalf("HTTP request is failed :%v", err)
 		return false
 	}
-	common.Infof("%s %s %v in %v", req.Method, req.URL, resp.Status, time.Now().Sub(t))
+	common.Infof("%s %s %v in %v", req.Method, req.URL, resp.Status, time.Since(t))
 	return true
 }
 
@@ -309,7 +309,7 @@ func HandleAddAndDeletePods(operation string, edgedpoint string, UID string, con
 		common.Fatalf("HTTP request is failed :%v", err)
 		return false
 	}
-	common.Infof("%s %s %v in %v", req.Method, req.URL, resp.Status, time.Now().Sub(t))
+	common.Infof("%s %s %v in %v", req.Method, req.URL, resp.Status, time.Since(t))
 	return true
 }
 
@@ -330,7 +330,7 @@ func GetPods(EdgedEndpoint string) (v1.PodList, error) {
 		common.Fatalf("Sending HTTP request failed: %v", err)
 		return pods, nil
 	}
-	common.Infof("%s %s %v in %v", req.Method, req.URL, resp.Status, time.Now().Sub(t))
+	common.Infof("%s %s %v in %v", req.Method, req.URL, resp.Status, time.Since(t))
 	defer resp.Body.Close()
 	contents, err := ioutil.ReadAll(resp.Body)
 	if err != nil {

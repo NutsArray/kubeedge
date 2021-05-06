@@ -1,15 +1,17 @@
 package config
 
 import (
+	"encoding/pem"
 	"io/ioutil"
 	"sync"
 
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/kubeedge/cloud/pkg/client/clientset/versioned"
 	syncinformer "github.com/kubeedge/kubeedge/cloud/pkg/client/informers/externalversions/reliablesyncs/v1alpha1"
 	synclister "github.com/kubeedge/kubeedge/cloud/pkg/client/listers/reliablesyncs/v1alpha1"
+	kele "github.com/kubeedge/kubeedge/cloud/pkg/leaderelection"
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/cloudcore/v1alpha1"
 )
 
@@ -23,17 +25,32 @@ type Configure struct {
 	CaKey         []byte
 	Cert          []byte
 	Key           []byte
+	Checker       *kele.ReadyzAdaptor
 }
 
-func InitConfigure(hub *v1alpha1.CloudHub, kubeAPIConfig *v1alpha1.KubeAPIConfig) {
+func InitConfigure(hub *v1alpha1.CloudHub) {
 	once.Do(func() {
-		Config = Configure{
-			CloudHub:      *hub,
-			KubeAPIConfig: kubeAPIConfig,
+		if len(hub.AdvertiseAddress) == 0 {
+			klog.Fatal("AdvertiseAddress must be specified!")
 		}
 
-		ca, _ := ioutil.ReadFile(hub.TLSCAFile)
-		caKey, _ := ioutil.ReadFile(hub.TLSCAKeyFile)
+		Config = Configure{
+			CloudHub: *hub,
+		}
+
+		ca, err := ioutil.ReadFile(hub.TLSCAFile)
+		if err == nil {
+			block, _ := pem.Decode(ca)
+			ca = block.Bytes
+			klog.Info("Succeed in loading CA certificate from local directory")
+		}
+
+		caKey, err := ioutil.ReadFile(hub.TLSCAKeyFile)
+		if err == nil {
+			block, _ := pem.Decode(caKey)
+			caKey = block.Bytes
+			klog.Info("Succeed in loading CA key from local directory")
+		}
 
 		if ca != nil && caKey != nil {
 			Config.Ca = ca
@@ -42,8 +59,18 @@ func InitConfigure(hub *v1alpha1.CloudHub, kubeAPIConfig *v1alpha1.KubeAPIConfig
 			klog.Fatal("Both of ca and caKey should be specified!")
 		}
 
-		cert, _ := ioutil.ReadFile(hub.TLSCertFile)
-		key, _ := ioutil.ReadFile(hub.TLSPrivateKeyFile)
+		cert, err := ioutil.ReadFile(hub.TLSCertFile)
+		if err == nil {
+			block, _ := pem.Decode(cert)
+			cert = block.Bytes
+			klog.Info("Succeed in loading certificate from local directory")
+		}
+		key, err := ioutil.ReadFile(hub.TLSPrivateKeyFile)
+		if err == nil {
+			block, _ := pem.Decode(key)
+			key = block.Bytes
+			klog.Info("Succeed in loading private key from local directory")
+		}
 
 		if cert != nil && key != nil {
 			Config.Cert = cert

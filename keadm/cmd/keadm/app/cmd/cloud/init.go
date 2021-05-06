@@ -19,7 +19,9 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/blang/semver"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -38,7 +40,7 @@ keadm init
 
 - This command will download and install the default version of KubeEdge cloud component
 
-keadm init --kubeedge-version=1.2.1  --kube-config=/root/.kube/config
+keadm init --kubeedge-version=%s  --kube-config=/root/.kube/config
 
   - kube-config is the absolute path of kubeconfig which used to secure connectivity between cloudcore and kube-apiserver
 `
@@ -50,14 +52,14 @@ func NewCloudInit(out io.Writer, init *types.InitOptions) *cobra.Command {
 		init = newInitOptions()
 	}
 
-	tools := make(map[string]types.ToolsInstaller, 0)
-	flagVals := make(map[string]types.FlagData, 0)
+	tools := make(map[string]types.ToolsInstaller)
+	flagVals := make(map[string]types.FlagData)
 
 	var cmd = &cobra.Command{
 		Use:     "init",
 		Short:   "Bootstraps cloud component. Checks and install (if required) the pre-requisites.",
 		Long:    cloudInitLongDescription,
-		Example: cloudInitExample,
+		Example: fmt.Sprintf(cloudInitExample, types.DefaultKubeEdgeVersion),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			checkFlags := func(f *pflag.Flag) {
 				util.AddToolVals(f, flagVals)
@@ -77,8 +79,7 @@ func NewCloudInit(out io.Writer, init *types.InitOptions) *cobra.Command {
 
 //newInitOptions will initialise new instance of options everytime
 func newInitOptions() *types.InitOptions {
-	var opts *types.InitOptions
-	opts = &types.InitOptions{}
+	opts := &types.InitOptions{}
 	opts.KubeConfig = types.DefaultKubeConfig
 	return opts
 }
@@ -93,17 +94,19 @@ func addJoinOtherFlags(cmd *cobra.Command, initOpts *types.InitOptions) {
 
 	cmd.Flags().StringVar(&initOpts.Master, types.Master, initOpts.Master,
 		"Use this key to set K8s master address, eg: http://127.0.0.1:8080")
+
+	cmd.Flags().StringVar(&initOpts.AdvertiseAddress, types.AdvertiseAddress, initOpts.AdvertiseAddress,
+		"Use this key to set IPs in cloudcore's certificate SubAltNames field. eg: 10.10.102.78,10.10.102.79")
+
+	cmd.Flags().StringVar(&initOpts.DNS, types.DomainName, initOpts.DNS,
+		"Use this key to set domain names in cloudcore's certificate SubAltNames field. eg: www.cloudcore.cn,www.kubeedge.cn")
+
+	cmd.Flags().StringVar(&initOpts.TarballPath, types.TarballPath, initOpts.TarballPath,
+		"Use this key to set the temp directory path for KubeEdge tarball, if not exist, download it")
 }
 
 //Add2ToolsList Reads the flagData (containing val and default val) and join options to fill the list of tools.
 func Add2ToolsList(toolList map[string]types.ToolsInstaller, flagData map[string]types.FlagData, initOptions *types.InitOptions) error {
-	toolList["Kubernetes"] = &util.K8SInstTool{
-		Common: util.Common{
-			KubeConfig: initOptions.KubeConfig,
-			Master:     initOptions.Master,
-		},
-	}
-
 	var kubeVer string
 	flgData, ok := flagData[types.KubeEdgeVersion]
 	if ok {
@@ -112,12 +115,14 @@ func Add2ToolsList(toolList map[string]types.ToolsInstaller, flagData map[string
 	if kubeVer == "" {
 		var latestVersion string
 		for i := 0; i < util.RetryTimes; i++ {
-			latestVersion, err := util.GetLatestVersion()
+			version, err := util.GetLatestVersion()
 			if err != nil {
-				return err
+				fmt.Println("Failed to get the latest KubeEdge release version")
+				continue
 			}
-			if len(latestVersion) != 0 {
-				kubeVer = latestVersion[1:]
+			if len(version) > 0 {
+				kubeVer = strings.TrimPrefix(version, "v")
+				latestVersion = version
 				break
 			}
 		}
@@ -126,12 +131,19 @@ func Add2ToolsList(toolList map[string]types.ToolsInstaller, flagData map[string
 			kubeVer = types.DefaultKubeEdgeVersion
 		}
 	}
+	common := util.Common{
+		ToolVersion: semver.MustParse(kubeVer),
+		KubeConfig:  initOptions.KubeConfig,
+		Master:      initOptions.Master,
+	}
 	toolList["Cloud"] = &util.KubeCloudInstTool{
-		Common: util.Common{
-			ToolVersion: kubeVer,
-			KubeConfig:  initOptions.KubeConfig,
-			Master:      initOptions.Master,
-		},
+		Common:           common,
+		AdvertiseAddress: initOptions.AdvertiseAddress,
+		DNSName:          initOptions.DNS,
+		TarballPath:      initOptions.TarballPath,
+	}
+	toolList["Kubernetes"] = &util.K8SInstTool{
+		Common: common,
 	}
 	return nil
 }

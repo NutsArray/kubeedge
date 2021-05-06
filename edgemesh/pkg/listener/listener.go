@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/kubeedge/beehive/pkg/core/model"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
+	"github.com/kubeedge/beehive/pkg/core/model"
 	"github.com/kubeedge/kubeedge/common/constants"
 	"github.com/kubeedge/kubeedge/edge/pkg/metamanager/client"
 	"github.com/kubeedge/kubeedge/edgemesh/pkg/cache"
@@ -37,7 +37,7 @@ const (
 	defaultNetworkPrefix = "9.251."
 	maxPoolSize          = 65534
 
-	SO_ORIGINAL_DST = 80
+	SoOriginalDst = 80
 )
 
 var (
@@ -242,7 +242,7 @@ func realServerAddress(conn *net.Conn) (string, int, error) {
 
 	var addr sockAddr
 	size := uint32(unsafe.Sizeof(addr))
-	err = getSockOpt(int(fd), syscall.SOL_IP, SO_ORIGINAL_DST, uintptr(unsafe.Pointer(&addr)), &size)
+	err = getSockOpt(int(fd), syscall.SOL_IP, SoOriginalDst, uintptr(unsafe.Pointer(&addr)), &size)
 	if err != nil {
 		return "", -1, err
 	}
@@ -256,7 +256,9 @@ func realServerAddress(conn *net.Conn) (string, int, error) {
 	}
 
 	port := int(addr.data[0])<<8 + int(addr.data[1])
-	syscall.SetNonblock(int(fd), true)
+	if err := syscall.SetNonblock(int(fd), true); err != nil {
+		return "", -1, nil
+	}
 
 	return ip.String(), port, nil
 }
@@ -312,21 +314,21 @@ func MsgProcess(msg model.Message) {
 	// process services
 	if svcs := filterResourceTypeService(msg); len(svcs) != 0 {
 		klog.Infof("[EdgeMesh] %s services: %d resource: %s", msg.GetOperation(), len(svcs), msg.Router.Resource)
-		for _, svc := range svcs {
-			svcName := svc.Namespace + "." + svc.Name
-			svcPorts := getSvcPorts(svc, svcName)
+		for i := range svcs {
+			svcName := svcs[i].Namespace + "." + svcs[i].Name
+			svcPorts := getSvcPorts(svcs[i], svcName)
 			switch msg.GetOperation() {
 			case "insert":
-				cache.GetMeshCache().Add("service"+"."+svcName, &svc)
-				klog.Infof("[EdgeMesh] insert svc %s.%s into cache", svc.Namespace, svc.Name)
+				cache.GetMeshCache().Add("service"+"."+svcName, &svcs[i])
+				klog.Infof("[EdgeMesh] insert svc %s.%s into cache", svcs[i].Namespace, svcs[i].Name)
 				addServer(svcName, svcPorts)
 			case "update":
-				cache.GetMeshCache().Add("service"+"."+svcName, &svc)
-				klog.Infof("[EdgeMesh] update svc %s.%s in cache", svc.Namespace, svc.Name)
+				cache.GetMeshCache().Add("service"+"."+svcName, &svcs[i])
+				klog.Infof("[EdgeMesh] update svc %s.%s in cache", svcs[i].Namespace, svcs[i].Name)
 				updateServer(svcName, svcPorts)
 			case "delete":
 				cache.GetMeshCache().Remove("service" + "." + svcName)
-				klog.Infof("[EdgeMesh] delete svc %s.%s from cache", svc.Namespace, svc.Name)
+				klog.Infof("[EdgeMesh] delete svc %s.%s from cache", svcs[i].Namespace, svcs[i].Name)
 				delServer(svcName)
 			default:
 				klog.Warningf("[EdgeMesh] invalid %s operation on services", msg.GetOperation())
@@ -360,7 +362,6 @@ func MsgProcess(msg model.Message) {
 			klog.Warningf("[EdgeMesh] invalid %s operation on podlist", msg.GetOperation())
 		}
 	}
-	return
 }
 
 // addServer adds a server
@@ -369,25 +370,24 @@ func addServer(svcName, svcPorts string) {
 	if ip != "" {
 		svcDesc.set(svcName, ip, svcPorts)
 		return
-	} else {
-		if len(unused) == 0 {
-			// try to expand
-			expandPool()
-			if len(unused) == 0 {
-				klog.Warningf("[EdgeMesh] insufficient fake IP !!")
-				return
-			}
-		}
-		ip = unused[0]
-		unused = unused[1:]
 	}
+	if len(unused) == 0 {
+		// try to expand
+		expandPool()
+		if len(unused) == 0 {
+			klog.Warningf("[EdgeMesh] insufficient fake IP !!")
+			return
+		}
+	}
+	ip = unused[0]
+	unused = unused[1:]
+
 	svcDesc.set(svcName, ip, svcPorts)
 	err := metaClient.Listener().Add(svcName, ip)
 	if err != nil {
 		klog.Errorf("[EdgeMesh] add listener %s to edge db error: %v", svcName, err)
 		return
 	}
-	return
 }
 
 // updateServer updates a server

@@ -7,18 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/core/model"
 	"github.com/kubeedge/kubeedge/edge/pkg/common/modules"
 	deviceconfig "github.com/kubeedge/kubeedge/edge/pkg/devicetwin/config"
 	"github.com/kubeedge/kubeedge/edge/pkg/devicetwin/dtcommon"
 	"github.com/kubeedge/kubeedge/edge/pkg/devicetwin/dttype"
-)
-
-var (
-	//IsDetail deal detail lock
-	IsDetail = false
 )
 
 //DTContext context for devicetwin
@@ -41,7 +36,7 @@ type DTContext struct {
 func InitDTContext() (*DTContext, error) {
 	return &DTContext{
 		GroupID:       "",
-		NodeName:      deviceconfig.Config.NodeName,
+		NodeName:      deviceconfig.Get().NodeName,
 		CommChan:      make(map[string]chan interface{}),
 		ConfirmChan:   make(chan interface{}, 1000),
 		ConfirmMap:    &sync.Map{},
@@ -66,8 +61,7 @@ func (dtc *DTContext) CommTo(dtmName string, content interface{}) error {
 func (dtc *DTContext) HeartBeat(dtmName string, content interface{}) error {
 	if strings.Compare(content.(string), "ping") == 0 {
 		dtc.ModulesHealth.Store(dtmName, time.Now().Unix())
-		klog.Infof("%s is healthy %v", dtmName, time.Now().Unix())
-
+		klog.V(3).Infof("%s is healthy %v", dtmName, time.Now().Unix())
 	} else if strings.Compare(content.(string), "stop") == 0 {
 		klog.Infof("%s stop", dtmName)
 		return errors.New("stop")

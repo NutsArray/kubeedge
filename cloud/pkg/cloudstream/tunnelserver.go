@@ -19,26 +19,29 @@ package cloudstream
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/kubeedge/kubeedge/pkg/stream"
-
 	"github.com/emicklei/go-restful"
 	"github.com/gorilla/websocket"
-	"k8s.io/klog"
+	certutil "k8s.io/client-go/util/cert"
+	"k8s.io/klog/v2"
 
-	"github.com/kubeedge/kubeedge/cloud/pkg/cloudstream/config"
+	hubconfig "github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/config"
+	streamconfig "github.com/kubeedge/kubeedge/cloud/pkg/cloudstream/config"
+	"github.com/kubeedge/kubeedge/pkg/stream"
 )
 
 type TunnelServer struct {
 	container *restful.Container
 	upgrader  websocket.Upgrader
 	sync.Mutex
-	sessions map[string]*Session
+	sessions   map[string]*Session
+	nodeNameIP sync.Map
 }
 
 func newTunnelServer() *TunnelServer {
@@ -50,7 +53,8 @@ func newTunnelServer() *TunnelServer {
 			ReadBufferSize:   1024,
 			Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
 				w.WriteHeader(status)
-				w.Write([]byte(reason.Error()))
+				_, err := w.Write([]byte(reason.Error()))
+				klog.Errorf("failed to write http response, err: %v", err)
 			},
 		},
 	}
@@ -77,59 +81,89 @@ func (s *TunnelServer) getSession(id string) (*Session, bool) {
 	return sess, ok
 }
 
+func (s *TunnelServer) addNodeIP(node, ip string) {
+	s.nodeNameIP.Store(node, ip)
+}
+
+func (s *TunnelServer) getNodeIP(node string) (string, bool) {
+	ip, ok := s.nodeNameIP.Load(node)
+	if !ok {
+		return "", ok
+	}
+	return ip.(string), ok
+}
+
 func (s *TunnelServer) connect(r *restful.Request, w *restful.Response) {
-	hostNameOverride := r.HeaderParameter(stream.SessionKeyHostNameOveride)
-	interalIP := r.HeaderParameter(stream.SessionKeyInternalIP)
+	hostNameOverride := r.HeaderParameter(stream.SessionKeyHostNameOverride)
+	if hostNameOverride == "" {
+		// TODO: Fix SessionHostNameOverride typo, remove this in v1.7.x
+		hostNameOverride = r.HeaderParameter(stream.SessionKeyHostNameOverrideOld)
+	}
+	internalIP := r.HeaderParameter(stream.SessionKeyInternalIP)
+	if internalIP == "" {
+		internalIP = strings.Split(r.Request.RemoteAddr, ":")[0]
+	}
 	con, err := s.upgrader.Upgrade(w, r.Request, nil)
 	if err != nil {
 		return
 	}
-	klog.Infof("get a new tunnel agent hostname %v, internalIP %v", hostNameOverride, interalIP)
+	klog.Infof("get a new tunnel agent hostname %v, internalIP %v", hostNameOverride, internalIP)
 
 	session := &Session{
 		tunnel:        stream.NewDefaultTunnel(con),
 		apiServerConn: make(map[uint64]APIServerConnection),
-		apiConnlock:   &sync.Mutex{},
+		apiConnlock:   &sync.RWMutex{},
 		sessionID:     hostNameOverride,
 	}
 
 	s.addSession(hostNameOverride, session)
-	s.addSession(interalIP, session)
+	s.addSession(internalIP, session)
+	s.addNodeIP(hostNameOverride, internalIP)
 	session.Serve()
 }
 
 func (s *TunnelServer) Start() {
 	s.installDefaultHandler()
-	data, err := ioutil.ReadFile(config.Config.TLSTunnelCAFile)
-	if err != nil {
-		klog.Fatalf("Read tls tunnel ca file error %v", err)
-		return
-	}
-	pool := x509.NewCertPool()
-	pool.AppendCertsFromPEM(data)
+	var data []byte
+	var key []byte
+	var cert []byte
 
-	cert, err := ioutil.ReadFile(config.Config.TLSTunnelCertFile)
-	if err != nil {
-		klog.Fatalf("Read cert file %v error %v", config.Config.TLSTunnelCertFile, err)
+	if streamconfig.Config.Ca != nil {
+		data = streamconfig.Config.Ca
+		klog.Info("Succeed in loading TunnelCA from local directory")
+	} else {
+		data = hubconfig.Config.Ca
+		klog.Info("Succeed in loading TunnelCA from CloudHub")
 	}
-	key, err := ioutil.ReadFile(config.Config.TLSTunnelPrivateKeyFile)
-	if err != nil {
-		klog.Fatalf("Read key file %v error %v", config.Config.TLSTunnelPrivateKeyFile, err)
+
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(pem.EncodeToMemory(&pem.Block{Type: certutil.CertificateBlockType, Bytes: data}))
+
+	if streamconfig.Config.Key != nil && streamconfig.Config.Cert != nil {
+		cert = streamconfig.Config.Cert
+		key = streamconfig.Config.Key
+		klog.Info("Succeed in loading TunnelCert and Key from local directory")
+	} else {
+		cert = hubconfig.Config.Cert
+		key = hubconfig.Config.Key
+		klog.Info("Succeed in loading TunnelCert and Key from CloudHub")
 	}
-	certificate, err := tls.X509KeyPair(cert, key)
+
+	certificate, err := tls.X509KeyPair(pem.EncodeToMemory(&pem.Block{Type: certutil.CertificateBlockType, Bytes: cert}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: key}))
 	if err != nil {
+		klog.Error("Failed to load TLSTunnelCert and Key")
 		panic(err)
 	}
 
 	tunnelServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", config.Config.TunnelPort),
+		Addr:    fmt.Sprintf(":%d", streamconfig.Config.TunnelPort),
 		Handler: s.container,
 		TLSConfig: &tls.Config{
 			ClientCAs:    pool,
 			Certificates: []tls.Certificate{certificate},
 			ClientAuth:   tls.RequireAndVerifyClientCert,
 			MinVersion:   tls.VersionTLS12,
-			CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
+			CipherSuites: []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256},
 		},
 	}
 	klog.Infof("Prepare to start tunnel server ...")

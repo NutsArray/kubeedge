@@ -39,10 +39,7 @@ import (
 //GenerateCerts - Generates Cerificates for Edge and Cloud nodes copy to respective folders
 func GenerateCerts() error {
 	cmd := exec.Command("bash", "-x", "scripts/generate_cert.sh")
-	if err := PrintCombinedOutput(cmd); err != nil {
-		return err
-	}
-	return nil
+	return PrintCombinedOutput(cmd)
 }
 
 func StartCloudCore() error {
@@ -105,7 +102,7 @@ func StartEdgeCore(master, nodeName string) error {
 func getSecret(master string) string {
 	secret := v1.Secret{}
 
-	err, resp := SendHttpRequest(http.MethodGet, master+"/api/v1/namespaces/kubeedge/secrets/tokensecret")
+	resp, err := SendHTTPRequest(http.MethodGet, master+"/api/v1/namespaces/kubeedge/secrets/tokensecret")
 	defer resp.Body.Close()
 	contents, err := ioutil.ReadAll(resp.Body)
 	if err != nil {

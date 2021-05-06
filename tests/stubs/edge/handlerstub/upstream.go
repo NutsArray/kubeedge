@@ -19,7 +19,7 @@ package handlerstub
 import (
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
 	"github.com/kubeedge/beehive/pkg/core/model"
@@ -53,7 +53,6 @@ func (dc *UpstreamController) SyncPods() {
 			klog.Infof("Stop sync pods")
 			return
 		default:
-
 		}
 		pods := dc.podManager.ListPods()
 		klog.V(4).Infof("Current pods number is: %v", len(pods))

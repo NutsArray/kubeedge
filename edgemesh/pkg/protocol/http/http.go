@@ -12,7 +12,7 @@ import (
 	"github.com/go-chassis/go-chassis/core/common"
 	"github.com/go-chassis/go-chassis/core/handler"
 	"github.com/go-chassis/go-chassis/core/invocation"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/kubeedge/edgemesh/pkg/config"
 )
@@ -97,7 +97,9 @@ func (p *HTTP) responseCallback(data *invocation.Response) error {
 					klog.Errorf("[EdgeMesh] convert http response to bytes err: %v", err)
 				} else {
 					// send response back
-					p.Conn.Write(respBytes)
+					if _, err := p.Conn.Write(respBytes); err != nil {
+						klog.Errorf("[EdgeMesh] write err: %v", err)
+					}
 					return nil
 				}
 			}
@@ -109,12 +111,14 @@ func (p *HTTP) responseCallback(data *invocation.Response) error {
 		StatusCode: http.StatusServiceUnavailable,
 		Proto:      p.req.Proto,
 		Request:    p.req,
-		Header:     make(http.Header, 0),
+		Header:     make(http.Header),
 	}
 	respBytes, _ = httpResponseToBytes(resp)
 	// send error response back
-	p.Conn.Write(respBytes)
-	return err
+	if _, err = p.Conn.Write(respBytes); err != nil {
+		return err
+	}
+	return nil
 }
 
 // httpResponseToBytes transforms http.Response to bytes

@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
 	"github.com/kubeedge/beehive/pkg/core/model"
@@ -16,7 +16,7 @@ const (
 	syncMsgRespTimeout = 1 * time.Minute
 )
 
-//CoreInterface is interface of mataclient
+//CoreInterface is interface of metaclient
 type CoreInterface interface {
 	PodsGetter
 	PodStatusGetter
@@ -118,7 +118,7 @@ func (s *send) SendSync(message *model.Message) (*model.Message, error) {
 		resp, err = beehiveContext.SendSync(metamanager.MetaManagerModuleName, *message, syncMsgRespTimeout)
 		retries++
 		if err == nil {
-			klog.Infof("send sync message %s successed and response: %v", message.GetResource(), resp)
+			klog.V(2).Infof("send sync message %s successed and response: %v", message.GetResource(), resp)
 			return true, nil
 		}
 		if retries < 3 {
@@ -126,7 +126,6 @@ func (s *send) SendSync(message *model.Message) (*model.Message, error) {
 			return false, nil
 		}
 		return true, err
-
 	})
 	return &resp, err
 }

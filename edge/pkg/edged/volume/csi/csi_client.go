@@ -44,7 +44,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	utilversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/volume"
 )
 
@@ -181,7 +181,6 @@ func newCsiDriverClient(driverName csiDriverName) (*csiDriverClient, error) {
 		return nil, fmt.Errorf("driver name is empty")
 	}
 
-	addr := fmt.Sprintf(csiAddrTemplate, driverName)
 	requiresV0Client := true
 
 	existingDriver, driverExists := csiDrivers.Get(string(driverName))
@@ -189,7 +188,7 @@ func newCsiDriverClient(driverName csiDriverName) (*csiDriverClient, error) {
 		return nil, fmt.Errorf("driver name %s not found in the list of registered CSI drivers", driverName)
 	}
 
-	addr = existingDriver.endpoint
+	addr := existingDriver.endpoint
 	requiresV0Client = versionRequiresV0Client(existingDriver.highestSupportedVersion)
 
 	nodeV1ClientCreator := newV1NodeClient
@@ -218,8 +217,6 @@ func (c *csiDriverClient) NodeGetInfo(ctx context.Context) (
 		var getNodeInfoError error
 		if c.nodeV1ClientCreator != nil {
 			nodeID, maxVolumePerNode, accessibleTopology, getNodeInfoError = c.nodeGetInfoV1(ctx)
-		} else if c.nodeV1ClientCreator != nil {
-			nodeID, maxVolumePerNode, accessibleTopology, getNodeInfoError = c.nodeGetInfoV0(ctx)
 		}
 		if nodeID != "" {
 			return true, nil
@@ -240,7 +237,6 @@ func (c *csiDriverClient) nodeGetInfoV1(ctx context.Context) (
 	maxVolumePerNode int64,
 	accessibleTopology map[string]string,
 	err error) {
-
 	nodeClient, closer, err := c.nodeV1ClientCreator(c.addr)
 	if err != nil {
 		return "", 0, nil, err
@@ -264,7 +260,6 @@ func (c *csiDriverClient) nodeGetInfoV0(ctx context.Context) (
 	maxVolumePerNode int64,
 	accessibleTopology map[string]string,
 	err error) {
-
 	nodeClient, closer, err := c.nodeV1ClientCreator(c.addr)
 	if err != nil {
 		return "", 0, nil, err
@@ -320,7 +315,6 @@ func (c *csiDriverClient) NodePublishVolume(
 	}
 
 	return fmt.Errorf("failed to call NodePublishVolume. Both nodeV1ClientCreator and nodeV0ClientCreator are nil")
-
 }
 
 func (c *csiDriverClient) NodeExpandVolume(ctx context.Context, volumeID, volumePath string, newSize resource.Quantity) (resource.Quantity, error) {
@@ -589,7 +583,6 @@ func (c *csiDriverClient) NodeSupportsNodeExpand(ctx context.Context) (bool, err
 	}
 
 	return false, fmt.Errorf("failed to call NodeSupportsNodeExpand. Both nodeV1ClientCreator and nodeV0ClientCreator are nil")
-
 }
 
 func (c *csiDriverClient) NodeSupportsStageUnstage(ctx context.Context) (bool, error) {
@@ -827,7 +820,6 @@ func (c *csiDriverClient) nodeGetVolumeStatsV1(
 		default:
 			klog.Errorf("unknown key %s in usage", unit.String())
 		}
-
 	}
 	return metrics, nil
 }

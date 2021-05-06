@@ -26,7 +26,7 @@ import (
 
 	"github.com/astaxie/beego/orm"
 	"github.com/golang/mock/gomock"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/core/model"
 	"github.com/kubeedge/kubeedge/edge/mocks/beego"
@@ -47,6 +47,8 @@ var (
 	typeDeleted = "deleted"
 	typeInt     = "int"
 	typeString  = "string"
+
+	valueType = "value"
 )
 
 // sendMsg sends message to receiverChannel and heartbeatChannel
@@ -74,7 +76,7 @@ func receiveMsg(commChannel chan interface{}, message *dttype.DTMessage) {
 // twinValueFunc returns a new TwinValue
 func twinValueFunc() *dttype.TwinValue {
 	var twinValue dttype.TwinValue
-	value := "value"
+	value := valueType
 	valueMetaData := &dttype.ValueMetadata{Timestamp: time.Now().UnixNano() / 1e6}
 	twinValue.Value = &value
 	twinValue.Metadata = valueMetaData
@@ -264,7 +266,7 @@ func TestDealTwinSync(t *testing.T) {
 			name:    "TestDealTwinSync(): Case 3: Unmarshal update request body failed",
 			context: &dtcontext.DTContext{},
 			msg:     msgTypeFunc(content),
-			err:     errors.New("Update twin error, the update request body not have key:twin"),
+			err:     dttype.ErrorUpdate,
 		},
 		{
 			name:     "TestDealTwinSync(): Case 4: Success case",
@@ -461,7 +463,7 @@ func TestDealDeviceTwin(t *testing.T) {
 			context:      &contextDeviceB,
 			deviceID:     deviceB,
 			dealType:     RestDealType,
-			err:          errors.New("Update twin error, the update request body not have key:twin"),
+			err:          dttype.ErrorUpdate,
 			rollbackNums: 0,
 			beginNums:    1,
 			commitNums:   1,
@@ -522,7 +524,7 @@ func TestDealDeviceTwinResult(t *testing.T) {
 
 	str := typeString
 	optionTrue := true
-	value := "value"
+	value := valueType
 	msgTwinValue := make(map[string]*dttype.MsgTwin)
 	msgTwinValue[deviceB] = &dttype.MsgTwin{
 		Expected: &dttype.TwinValue{Value: &value},
@@ -1326,7 +1328,7 @@ func TestDealTwinAdd(t *testing.T) {
 
 // TestDealMsgTwin is function to test DealMsgTwin
 func TestDealMsgTwin(t *testing.T) {
-	value := "value"
+	value := valueType
 	str := typeString
 	optionTrue := true
 	optionFalse := false

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/core/model"
 	"github.com/kubeedge/kubeedge/edge/pkg/edgehub/config"
@@ -98,21 +98,25 @@ func (wsc *WebSocketClient) Init() error {
 	return errors.New("max retry count reached when connecting to cloud")
 }
 
-//Uninit closes the websocket connection
-func (wsc *WebSocketClient) Uninit() {
+//UnInit closes the websocket connection
+func (wsc *WebSocketClient) UnInit() {
 	wsc.connection.Close()
 }
 
 //Send sends the message as JSON object through the connection
 func (wsc *WebSocketClient) Send(message model.Message) error {
+	err := wsc.connection.SetWriteDeadline(time.Now().Add(wsc.config.WriteDeadline))
+	if err != nil {
+		return err
+	}
 	return wsc.connection.WriteMessageAsync(&message)
 }
 
 //Receive reads the binary message through the connection
 func (wsc *WebSocketClient) Receive() (model.Message, error) {
 	message := model.Message{}
-	wsc.connection.ReadMessage(&message)
-	return message, nil
+	err := wsc.connection.ReadMessage(&message)
+	return message, err
 }
 
 //Notify logs info

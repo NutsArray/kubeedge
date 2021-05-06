@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 
 	cloud "github.com/kubeedge/kubeedge/keadm/cmd/keadm/app/cmd/cloud"
+	"github.com/kubeedge/kubeedge/keadm/cmd/keadm/app/cmd/debug"
 	edge "github.com/kubeedge/kubeedge/keadm/cmd/keadm/app/cmd/edge"
 )
 
@@ -34,7 +35,7 @@ var (
     | Please give us feedback at:                              |
     | https://github.com/kubeedge/kubeedge/issues              |
     +----------------------------------------------------------+
-	
+
     Create a cluster with cloud node
     (which controls the edge node cluster), and edge nodes
     (where native containerized application, in the form of
@@ -60,7 +61,6 @@ var (
 
 // NewKubeedgeCommand returns cobra.Command to run keadm commands
 func NewKubeedgeCommand(in io.Reader, out, err io.Writer) *cobra.Command {
-
 	cmds := &cobra.Command{
 		Use:     "keadm",
 		Short:   "keadm: Bootstrap KubeEdge cluster",
@@ -71,8 +71,10 @@ func NewKubeedgeCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 	cmds.ResetFlags()
 	cmds.AddCommand(cloud.NewCloudInit(out, nil))
 	cmds.AddCommand(edge.NewEdgeJoin(out, nil))
-	cmds.AddCommand(NewKubeEdgeReset(out))
+	cmds.AddCommand(NewKubeEdgeReset(out, nil))
 	cmds.AddCommand(NewCmdVersion(out))
+	cmds.AddCommand(cloud.NewGettoken(out, nil))
+	cmds.AddCommand(debug.NewEdgeDebug(out))
 
 	return cmds
 }

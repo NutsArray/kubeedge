@@ -21,6 +21,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
 	componentbaseconfig "k8s.io/component-base/config"
 
 	"github.com/kubeedge/kubeedge/common/constants"
@@ -29,6 +30,8 @@ import (
 
 // NewDefaultCloudCoreConfig returns a full CloudCoreConfig object
 func NewDefaultCloudCoreConfig() *CloudCoreConfig {
+	advertiseAddress, _ := utilnet.ChooseHostInterface()
+
 	c := &CloudCoreConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       Kind,
@@ -43,14 +46,18 @@ func NewDefaultCloudCoreConfig() *CloudCoreConfig {
 		},
 		Modules: &Modules{
 			CloudHub: &CloudHub{
-				Enable:            true,
-				KeepaliveInterval: 30,
-				NodeLimit:         10,
-				TLSCAFile:         constants.DefaultCAFile,
-				TLSCAKeyFile:      constants.DefaultCAKeyFile,
-				TLSCertFile:       constants.DefaultCertFile,
-				TLSPrivateKeyFile: constants.DefaultKeyFile,
-				WriteTimeout:      30,
+				Enable:                  true,
+				KeepaliveInterval:       30,
+				NodeLimit:               1000,
+				TLSCAFile:               constants.DefaultCAFile,
+				TLSCAKeyFile:            constants.DefaultCAKeyFile,
+				TLSCertFile:             constants.DefaultCertFile,
+				TLSPrivateKeyFile:       constants.DefaultKeyFile,
+				WriteTimeout:            30,
+				AdvertiseAddress:        []string{advertiseAddress.String()},
+				DNSNames:                []string{""},
+				EdgeCertSigningDuration: 365,
+				TokenRefreshDuration:    12,
 				Quic: &CloudHubQUIC{
 					Enable:             false,
 					Address:            "0.0.0.0",
@@ -66,7 +73,7 @@ func NewDefaultCloudCoreConfig() *CloudCoreConfig {
 					Port:    10000,
 					Address: "0.0.0.0",
 				},
-				Https: &CloudHubHttps{
+				HTTPS: &CloudHubHTTPS{
 					Enable:  true,
 					Port:    10002,
 					Address: "0.0.0.0",
@@ -87,6 +94,8 @@ func NewDefaultCloudCoreConfig() *CloudCoreConfig {
 					SecretEvent:                constants.DefaultSecretEventBuffer,
 					ServiceEvent:               constants.DefaultServiceEventBuffer,
 					EndpointsEvent:             constants.DefaultEndpointsEventBuffer,
+					RulesEvent:                 constants.DefaultRulesEventBuffer,
+					RuleEndpointsEvent:         constants.DefaultRuleEndpointsEventBuffer,
 					QueryPersistentVolume:      constants.DefaultQueryPersistentVolumeBuffer,
 					QueryPersistentVolumeClaim: constants.DefaultQueryPersistentVolumeClaimBuffer,
 					QueryVolumeAttachment:      constants.DefaultQueryVolumeAttachmentBuffer,
@@ -94,10 +103,11 @@ func NewDefaultCloudCoreConfig() *CloudCoreConfig {
 					UpdateNode:                 constants.DefaultUpdateNodeBuffer,
 					DeletePod:                  constants.DefaultDeletePodBuffer,
 				},
-				Context: &EdgeControllerContext{
-					SendModule:     metaconfig.ModuleNameCloudHub,
-					ReceiveModule:  metaconfig.ModuleNameEdgeController,
-					ResponseModule: metaconfig.ModuleNameCloudHub,
+				Context: &ControllerContext{
+					SendModule:       metaconfig.ModuleNameCloudHub,
+					SendRouterModule: metaconfig.ModuleNameRouter,
+					ReceiveModule:    metaconfig.ModuleNameEdgeController,
+					ResponseModule:   metaconfig.ModuleNameCloudHub,
 				},
 				Load: &EdgeControllerLoad{
 					UpdatePodStatusWorkers:            constants.DefaultUpdatePodStatusWorkers,
@@ -111,12 +121,12 @@ func NewDefaultCloudCoreConfig() *CloudCoreConfig {
 					QueryVolumeAttachmentWorkers:      constants.DefaultQueryVolumeAttachmentWorkers,
 					QueryNodeWorkers:                  constants.DefaultQueryNodeWorkers,
 					UpdateNodeWorkers:                 constants.DefaultUpdateNodeWorkers,
-					DeletePodWorkers:                  constants.DefaultDeletePodBuffer,
+					DeletePodWorkers:                  constants.DefaultDeletePodWorkers,
 				},
 			},
 			DeviceController: &DeviceController{
 				Enable: true,
-				Context: &DeviceControllerContext{
+				Context: &ControllerContext{
 					SendModule:     metaconfig.ModuleNameCloudHub,
 					ReceiveModule:  metaconfig.ModuleNameDeviceController,
 					ResponseModule: metaconfig.ModuleNameCloudHub,
@@ -133,16 +143,25 @@ func NewDefaultCloudCoreConfig() *CloudCoreConfig {
 			SyncController: &SyncController{
 				Enable: true,
 			},
+			DynamicController: &DynamicController{
+				Enable: false,
+			},
 			CloudStream: &CloudStream{
 				Enable:                  false,
 				TLSTunnelCAFile:         constants.DefaultCAFile,
 				TLSTunnelCertFile:       constants.DefaultCertFile,
 				TLSTunnelPrivateKeyFile: constants.DefaultKeyFile,
-				TunnelPort:              10002,
+				TunnelPort:              constants.DefaultTunnelPort,
 				TLSStreamCAFile:         constants.DefaultStreamCAFile,
 				TLSStreamCertFile:       constants.DefaultStreamCertFile,
 				TLSStreamPrivateKeyFile: constants.DefaultStreamKeyFile,
 				StreamPort:              10003,
+			},
+			Router: &Router{
+				Enable:      false,
+				Address:     "0.0.0.0",
+				Port:        9443,
+				RestTimeout: 60,
 			},
 		},
 		LeaderElection: &componentbaseconfig.LeaderElectionConfiguration{
@@ -151,7 +170,7 @@ func NewDefaultCloudCoreConfig() *CloudCoreConfig {
 			RenewDeadline:     metav1.Duration{Duration: 10 * time.Second},
 			RetryPeriod:       metav1.Duration{Duration: 2 * time.Second},
 			ResourceLock:      "endpointsleases",
-			ResourceNamespace: "kubeedge",
+			ResourceNamespace: constants.KubeEdgeNameSpace,
 			ResourceName:      "cloudcorelease",
 		},
 	}
@@ -160,6 +179,8 @@ func NewDefaultCloudCoreConfig() *CloudCoreConfig {
 
 // NewMinCloudCoreConfig returns a min CloudCoreConfig object
 func NewMinCloudCoreConfig() *CloudCoreConfig {
+	advertiseAddress, _ := utilnet.ChooseHostInterface()
+
 	return &CloudCoreConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       Kind,
@@ -171,11 +192,12 @@ func NewMinCloudCoreConfig() *CloudCoreConfig {
 		},
 		Modules: &Modules{
 			CloudHub: &CloudHub{
-				NodeLimit:         10,
+				NodeLimit:         1000,
 				TLSCAFile:         constants.DefaultCAFile,
 				TLSCAKeyFile:      constants.DefaultCAKeyFile,
 				TLSCertFile:       constants.DefaultCertFile,
 				TLSPrivateKeyFile: constants.DefaultKeyFile,
+				AdvertiseAddress:  []string{advertiseAddress.String()},
 				UnixSocket: &CloudHubUnixSocket{
 					Enable:  true,
 					Address: "unix:///var/lib/kubeedge/kubeedge.sock",
@@ -185,11 +207,17 @@ func NewMinCloudCoreConfig() *CloudCoreConfig {
 					Port:    10000,
 					Address: "0.0.0.0",
 				},
-				Https: &CloudHubHttps{
+				HTTPS: &CloudHubHTTPS{
 					Enable:  true,
 					Port:    10002,
 					Address: "0.0.0.0",
 				},
+			},
+			Router: &Router{
+				Enable:      false,
+				Address:     "0.0.0.0",
+				Port:        9443,
+				RestTimeout: 60,
 			},
 		},
 		LeaderElection: &componentbaseconfig.LeaderElectionConfiguration{

@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/go-chassis/go-chassis/core/registry"
-	"github.com/go-chassis/go-chassis/pkg/util/tags"
+	utiltags "github.com/go-chassis/go-chassis/pkg/util/tags"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/kubeedge/edge/pkg/metamanager/client"
 	"github.com/kubeedge/kubeedge/edgemesh/pkg/cache"
@@ -45,7 +45,7 @@ func (esd *EdgeServiceDiscovery) GetAllMicroServices() ([]*registry.MicroService
 // FindMicroServiceInstances find micro-service instances (subnets)
 func (esd *EdgeServiceDiscovery) FindMicroServiceInstances(consumerID, microServiceName string, tags utiltags.Tags) ([]*registry.MicroServiceInstance, error) {
 	// parse microServiceName
-	name, namespace, port, err := parseServiceUrl(microServiceName)
+	name, namespace, port, err := parseServiceURL(microServiceName)
 	if err != nil {
 		return nil, err
 	}
@@ -125,24 +125,27 @@ func (esd *EdgeServiceDiscovery) AutoSync() {}
 // Close close all websocket connection
 func (esd *EdgeServiceDiscovery) Close() error { return nil }
 
-// parseServiceUrl parses serviceUrl to ${service_name}.${namespace}.svc.${cluster}:${port}, keeps with k8s service
-func parseServiceUrl(serviceUrl string) (name, namespace string, port int, err error) {
-	name, namespace = common.SplitServiceKey(serviceUrl)
-	serviceUrlSplit := strings.Split(serviceUrl, ":")
-	if len(serviceUrlSplit) == 1 {
+// parseServiceURL parses serviceURL to ${service_name}.${namespace}.svc.${cluster}:${port}, keeps with k8s service
+func parseServiceURL(serviceURL string) (string, string, int, error) {
+	var port int
+	var err error
+	serviceURLSplit := strings.Split(serviceURL, ":")
+	if len(serviceURLSplit) == 1 {
 		// default
 		port = 80
-	} else if len(serviceUrlSplit) == 2 {
-		port, err = strconv.Atoi(serviceUrlSplit[1])
+	} else if len(serviceURLSplit) == 2 {
+		port, err = strconv.Atoi(serviceURLSplit[1])
 		if err != nil {
-			klog.Errorf("[EdgeMesh] service url %s invalid", serviceUrl)
-			return
+			klog.Errorf("[EdgeMesh] service url %s invalid", serviceURL)
+			return "", "", 0, err
 		}
 	} else {
-		klog.Errorf("[EdgeMesh] service url %s invalid", serviceUrl)
-		err = fmt.Errorf("service url %s invalid", serviceUrl)
+		klog.Errorf("[EdgeMesh] service url %s invalid", serviceURL)
+		err = fmt.Errorf("service url %s invalid", serviceURL)
+		return "", "", 0, err
 	}
-	return
+	name, namespace := common.SplitServiceKey(serviceURLSplit[0])
+	return name, namespace, port, nil
 }
 
 // getService get k8s service from either lruCache or metaManager
@@ -183,6 +186,10 @@ func (esd *EdgeServiceDiscovery) getPods(name, namespace string) ([]v1.Pod, erro
 		if !ok {
 			klog.Errorf("[EdgeMesh] pods %s from cache with invalid type", key)
 			return nil, fmt.Errorf("pods %s from cache with invalid type", key)
+		}
+		if len(pods) == 0 {
+			klog.Errorf("[EdgeMesh] pod list %s is empty", key)
+			return nil, fmt.Errorf("pod list %s is empty", key)
 		}
 		klog.Infof("[EdgeMesh] get pods %s from cache", key)
 	} else {

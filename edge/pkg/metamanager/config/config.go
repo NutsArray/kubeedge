@@ -3,11 +3,8 @@ package config
 import (
 	"sync"
 
+	metaserverconfig "github.com/kubeedge/kubeedge/edge/pkg/metamanager/metaserver/config"
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/edgecore/v1alpha1"
-)
-
-const (
-	defaultSyncInterval = 60
 )
 
 var Config Configure
@@ -26,5 +23,6 @@ func InitConfigure(m *v1alpha1.MetaManager) {
 		Config = Configure{
 			MetaManager: *m,
 		}
+		metaserverconfig.InitConfigure(Config.MetaServer)
 	})
 }

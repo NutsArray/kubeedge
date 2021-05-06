@@ -19,7 +19,7 @@ package handlerstub
 import (
 	"encoding/json"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/common/util"
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
@@ -37,7 +37,6 @@ func (hs *HandlerStub) WaitforMessage() {
 				klog.Warning("stop waiting for message")
 				return
 			default:
-
 			}
 			if msg, err := beehiveContext.Receive(hs.Name()); err == nil {
 				klog.V(4).Infof("Receive a message %v", msg)
@@ -83,7 +82,6 @@ func (hs *HandlerStub) ProcessInsert(msg model.Message) {
 		case []byte:
 			data = msg.GetContent().([]byte)
 		default:
-			var err error
 			data, err = json.Marshal(msg.GetContent())
 			if err != nil {
 				klog.Warningf("message: %s process failure, marshal content failed with error: %s", msg.GetID(), err)

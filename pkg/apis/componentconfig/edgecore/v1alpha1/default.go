@@ -17,9 +17,13 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"net"
+	"net/url"
 	"os"
 	"path"
+	"strconv"
 
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubeedge/kubeedge/common/constants"
@@ -48,6 +52,9 @@ func NewDefaultEdgeCoreConfig() *EdgeCoreConfig {
 		Modules: &Modules{
 			Edged: &Edged{
 				Enable:                      true,
+				Labels:                      map[string]string{},
+				Annotations:                 map[string]string{},
+				Taints:                      []v1.Taint{},
 				NodeStatusUpdateFrequency:   constants.DefaultNodeStatusUpdateFrequency,
 				RuntimeType:                 constants.DefaultRuntimeType,
 				DockerAddress:               constants.DefaultDockerAddress,
@@ -58,13 +65,12 @@ func NewDefaultEdgeCoreConfig() *EdgeCoreConfig {
 				ClusterDomain:               "",
 				ConcurrentConsumers:         constants.DefaultConcurrentConsumers,
 				EdgedMemoryCapacity:         constants.DefaultEdgedMemoryCapacity,
-				PodSandboxImage:             constants.DefaultPodSandboxImage,
+				PodSandboxImage:             util.GetPodSandboxImage(),
 				ImagePullProgressDeadline:   constants.DefaultImagePullProgressDeadline,
 				RuntimeRequestTimeout:       constants.DefaultRuntimeRequestTimeout,
 				HostnameOverride:            hostnameOverride,
 				RegisterNodeNamespace:       constants.DefaultRegisterNodeNamespace,
 				RegisterNode:                true,
-				InterfaceName:               constants.DefaultInterfaceName,
 				DevicePluginEnabled:         false,
 				GPUPluginEnabled:            false,
 				ImageGCHighThreshold:        constants.DefaultImageGCHighThreshold,
@@ -92,18 +98,22 @@ func NewDefaultEdgeCoreConfig() *EdgeCoreConfig {
 					Enable:           false,
 					HandshakeTimeout: 30,
 					ReadDeadline:     15,
-					Server:           "127.0.0.1:10001",
+					Server:           net.JoinHostPort(localIP, "10001"),
 					WriteDeadline:    15,
 				},
 				WebSocket: &EdgeHubWebSocket{
 					Enable:           true,
 					HandshakeTimeout: 30,
 					ReadDeadline:     15,
-					Server:           "127.0.0.1:10000",
+					Server:           net.JoinHostPort(localIP, "10000"),
 					WriteDeadline:    15,
 				},
-				HTTPServer: "https://127.0.0.1:10002",
-				Token:      "",
+				HTTPServer: (&url.URL{
+					Scheme: "https",
+					Host:   net.JoinHostPort(localIP, "10002"),
+				}).String(),
+				Token:              "",
+				RotateCertificates: true,
 			},
 			EventBus: &EventBus{
 				Enable:               true,
@@ -113,12 +123,23 @@ func NewDefaultEdgeCoreConfig() *EdgeCoreConfig {
 				MqttServerExternal:   "tcp://127.0.0.1:1883",
 				MqttServerInternal:   "tcp://127.0.0.1:1884",
 				MqttMode:             MqttModeExternal,
+				TLS: &EventBusTLS{
+					Enable:                false,
+					TLSMqttCAFile:         constants.DefaultMqttCAFile,
+					TLSMqttCertFile:       constants.DefaultMqttCertFile,
+					TLSMqttPrivateKeyFile: constants.DefaultMqttKeyFile,
+				},
 			},
 			MetaManager: &MetaManager{
 				Enable:                true,
 				ContextSendGroup:      metaconfig.GroupNameHub,
 				ContextSendModule:     metaconfig.ModuleNameEdgeHub,
 				PodStatusSyncInterval: constants.DefaultPodStatusSyncInterval,
+				RemoteQueryTimeout:    constants.DefaultRemoteQueryTimeout,
+				MetaServer: &MetaServer{
+					Enable: false,
+					Debug:  false,
+				},
 			},
 			ServiceBus: &ServiceBus{
 				Enable: false,
@@ -143,7 +164,7 @@ func NewDefaultEdgeCoreConfig() *EdgeCoreConfig {
 				TLSTunnelPrivateKeyFile: constants.DefaultKeyFile,
 				HandshakeTimeout:        30,
 				ReadDeadline:            15,
-				TunnelServer:            "127.0.0.1:10002",
+				TunnelServer:            net.JoinHostPort("127.0.0.1", strconv.Itoa(constants.DefaultTunnelPort)),
 				WriteDeadline:           15,
 			},
 		},
@@ -174,9 +195,8 @@ func NewMinEdgeCoreConfig() *EdgeCoreConfig {
 				NodeIP:                localIP,
 				ClusterDNS:            "",
 				ClusterDomain:         "",
-				PodSandboxImage:       constants.DefaultPodSandboxImage,
+				PodSandboxImage:       util.GetPodSandboxImage(),
 				HostnameOverride:      hostnameOverride,
-				InterfaceName:         constants.DefaultInterfaceName,
 				DevicePluginEnabled:   false,
 				GPUPluginEnabled:      false,
 				CGroupDriver:          CGroupDriverCGroupFS,
@@ -192,11 +212,14 @@ func NewMinEdgeCoreConfig() *EdgeCoreConfig {
 					Enable:           true,
 					HandshakeTimeout: 30,
 					ReadDeadline:     15,
-					Server:           "127.0.0.1:10000",
+					Server:           net.JoinHostPort(localIP, "10000"),
 					WriteDeadline:    15,
 				},
-				HTTPServer: "https://127.0.0.1:10002",
-				Token:      "",
+				HTTPServer: (&url.URL{
+					Scheme: "https",
+					Host:   net.JoinHostPort(localIP, "10002"),
+				}).String(),
+				Token: "",
 			},
 			EventBus: &EventBus{
 				MqttQOS:            0,

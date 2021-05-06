@@ -22,6 +22,7 @@ import (
 	"path"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/edgecore/v1alpha1"
 	utilvalidation "github.com/kubeedge/kubeedge/pkg/util/validation"
@@ -63,8 +64,7 @@ func ValidateModuleEdged(e v1alpha1.Edged) field.ErrorList {
 	}
 	allErrs := field.ErrorList{}
 	if e.NodeIP == "" {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("NodeIp"), e.NodeIP,
-			"Need sed NodeIP"))
+		klog.Warningf("NodeIP is empty , use default ip which can connect to cloud.")
 	}
 	switch e.CGroupDriver {
 	case v1alpha1.CGroupDriverCGroupFS, v1alpha1.CGroupDriverSystemd:
@@ -152,21 +152,9 @@ func ValidateModuleEdgeMesh(m v1alpha1.EdgeMesh) field.ErrorList {
 
 // ValidateModuleEdgeStream validates `m` and returns an errorList if it is invalid
 func ValidateModuleEdgeStream(m v1alpha1.EdgeStream) field.ErrorList {
-	if !m.Enable {
-		return field.ErrorList{}
-	}
 	allErrs := field.ErrorList{}
-	if !utilvalidation.FileIsExist(m.TLSTunnelCAFile) {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("TLSTunnelCAFile"),
-			m.TLSTunnelCAFile, "TLSTunnelCAFile file not exist"))
-	}
-	if !utilvalidation.FileIsExist(m.TLSTunnelCertFile) {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("TLSTunnelCertFile"),
-			m.TLSTunnelCertFile, "TLSTunnelCertFile file not exist"))
-	}
-	if !utilvalidation.FileIsExist(m.TLSTunnelPrivateKeyFile) {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("TLSTunnelPrivateKeyFile"),
-			m.TLSTunnelPrivateKeyFile, "TLSTunnelPrivateKeyFile file not exist"))
+	if !m.Enable {
+		return allErrs
 	}
 	return allErrs
 }

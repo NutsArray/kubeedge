@@ -10,7 +10,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v2"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/kubeedge/pkg/version"
 )
@@ -23,7 +23,7 @@ const (
 func NewCmdVersion(out io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print the version of kubeadm",
+		Short: "Print the version of keadm",
 		Run: func(cmd *cobra.Command, args []string) {
 			err := RunVersion(out, cmd)
 			CheckErr(err, fatal)
@@ -33,7 +33,7 @@ func NewCmdVersion(out io.Writer) *cobra.Command {
 	return cmd
 }
 
-// RunVersion provides the version information of kubeadm in format depending on arguments
+// RunVersion provides the version information of keadm in format depending on arguments
 // specified in cobra.Command.
 func RunVersion(out io.Writer, cmd *cobra.Command) error {
 	v := version.Get()

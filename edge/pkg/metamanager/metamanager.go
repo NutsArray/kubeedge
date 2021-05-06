@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/astaxie/beego/orm"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/core"
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
@@ -12,6 +12,10 @@ import (
 	"github.com/kubeedge/kubeedge/edge/pkg/common/modules"
 	metamanagerconfig "github.com/kubeedge/kubeedge/edge/pkg/metamanager/config"
 	"github.com/kubeedge/kubeedge/edge/pkg/metamanager/dao"
+	"github.com/kubeedge/kubeedge/edge/pkg/metamanager/dao/v2"
+	"github.com/kubeedge/kubeedge/edge/pkg/metamanager/metaserver"
+	metaserverconfig "github.com/kubeedge/kubeedge/edge/pkg/metamanager/metaserver/config"
+	"github.com/kubeedge/kubeedge/edge/pkg/metamanager/metaserver/kubernetes/storage/sqlite/imitator"
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/edgecore/v1alpha1"
 )
 
@@ -44,6 +48,7 @@ func initDBTable(module core.Module) {
 		return
 	}
 	orm.RegisterModel(new(dao.Meta))
+	orm.RegisterModel(new(v2.MetaV2))
 }
 
 func (*metaManager) Name() string {
@@ -59,7 +64,10 @@ func (m *metaManager) Enable() bool {
 }
 
 func (m *metaManager) Start() {
-
+	if metaserverconfig.Config.Enable {
+		imitator.StorageInit()
+		go metaserver.NewMetaServer().Start(beehiveContext.Done())
+	}
 	go func() {
 		period := getSyncInterval()
 		timer := time.NewTimer(period)

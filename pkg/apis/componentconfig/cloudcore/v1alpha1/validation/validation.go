@@ -20,11 +20,14 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	componentbaseconfig "k8s.io/component-base/config"
+	"k8s.io/klog/v2"
 
+	"github.com/kubeedge/kubeedge/common/constants"
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/cloudcore/v1alpha1"
 	utilvalidation "github.com/kubeedge/kubeedge/pkg/util/validation"
 )
@@ -37,6 +40,7 @@ func ValidateCloudCoreConfiguration(c *v1alpha1.CloudCoreConfig) field.ErrorList
 	allErrs = append(allErrs, ValidateModuleEdgeController(*c.Modules.EdgeController)...)
 	allErrs = append(allErrs, ValidateModuleDeviceController(*c.Modules.DeviceController)...)
 	allErrs = append(allErrs, ValidateModuleSyncController(*c.Modules.SyncController)...)
+	allErrs = append(allErrs, ValidateModuleDynamicController(*c.Modules.DynamicController)...)
 	allErrs = append(allErrs, ValidateLeaderElectionConfiguration(*c.LeaderElection)...)
 	allErrs = append(allErrs, ValidateModuleCloudStream(*c.Modules.CloudStream)...)
 	return allErrs
@@ -48,8 +52,7 @@ func ValidateLeaderElectionConfiguration(l componentbaseconfig.LeaderElectionCon
 		return field.ErrorList{}
 	}
 	allErrs := field.ErrorList{}
-	//TODO: Encapsulate namespace "kubeedge" into constants
-	if l.ResourceNamespace != "kubeedge" {
+	if l.ResourceNamespace != constants.KubeEdgeNameSpace {
 		allErrs = append(allErrs, field.Required(field.NewPath("ResourceNamespace"), "resourceLock's namesapce must be kubeedge"))
 	}
 	return allErrs
@@ -62,15 +65,15 @@ func ValidateModuleCloudHub(c v1alpha1.CloudHub) field.ErrorList {
 	}
 
 	allErrs := field.ErrorList{}
-	validHttpsPort := utilvalidation.IsValidPortNum(int(c.Https.Port))
+	validHTTPSPort := utilvalidation.IsValidPortNum(int(c.HTTPS.Port))
 	validWPort := utilvalidation.IsValidPortNum(int(c.WebSocket.Port))
 	validAddress := utilvalidation.IsValidIP(c.WebSocket.Address)
 	validQPort := utilvalidation.IsValidPortNum(int(c.Quic.Port))
 	validQAddress := utilvalidation.IsValidIP(c.Quic.Address)
 
-	if len(validHttpsPort) > 0 {
-		for _, m := range validHttpsPort {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("port"), c.Https.Port, m))
+	if len(validHTTPSPort) > 0 {
+		for _, m := range validHTTPSPort {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("port"), c.HTTPS.Port, m))
 		}
 	}
 	if len(validWPort) > 0 {
@@ -104,6 +107,10 @@ func ValidateModuleCloudHub(c v1alpha1.CloudHub) field.ErrorList {
 				c.UnixSocket.Address, fmt.Sprintf("create unixSocketAddress %v dir %v error: %v",
 					c.UnixSocket.Address, path.Dir(s[1]), err)))
 		}
+	}
+	if c.TokenRefreshDuration <= 0 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("TokenRefreshDuration"),
+			c.TokenRefreshDuration, "TokenRefreshDuration must be positive"))
 	}
 	return allErrs
 }
@@ -140,6 +147,16 @@ func ValidateModuleSyncController(d v1alpha1.SyncController) field.ErrorList {
 	return allErrs
 }
 
+// ValidateModuleDynamicController validates `d` and returns an errorList if it is invalid
+func ValidateModuleDynamicController(d v1alpha1.DynamicController) field.ErrorList {
+	if !d.Enable {
+		return field.ErrorList{}
+	}
+
+	allErrs := field.ErrorList{}
+	return allErrs
+}
+
 // ValidateModuleCloudStream validates `d` and returns an errorList if it is invalid
 func ValidateModuleCloudStream(d v1alpha1.CloudStream) field.ErrorList {
 	if !d.Enable {
@@ -149,13 +166,13 @@ func ValidateModuleCloudStream(d v1alpha1.CloudStream) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if !utilvalidation.FileIsExist(d.TLSTunnelPrivateKeyFile) {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("TLSTunnelPrivateKeyFile"), d.TLSTunnelPrivateKeyFile, "TLSTunnelPrivateKeyFile not exist"))
+		klog.Warningf("TLSTunnelPrivateKeyFile does not exist in %s, will load from secret", d.TLSTunnelPrivateKeyFile)
 	}
 	if !utilvalidation.FileIsExist(d.TLSTunnelCertFile) {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("TLSTunnelCertFile"), d.TLSTunnelCertFile, "TLSTunnelCertFile not exist"))
+		klog.Warningf("TLSTunnelCertFile does not exist in %s, will load from secret", d.TLSTunnelCertFile)
 	}
 	if !utilvalidation.FileIsExist(d.TLSTunnelCAFile) {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("TLSTunnelCAFile"), d.TLSTunnelCAFile, "TLSTunnelCAFile not exist"))
+		klog.Warningf("TLSTunnelCAFile does not exist in %s, will load from secret", d.TLSTunnelCAFile)
 	}
 
 	if !utilvalidation.FileIsExist(d.TLSStreamPrivateKeyFile) {
@@ -174,7 +191,7 @@ func ValidateModuleCloudStream(d v1alpha1.CloudStream) field.ErrorList {
 // ValidateKubeAPIConfig validates `k` and returns an errorList if it is invalid
 func ValidateKubeAPIConfig(k v1alpha1.KubeAPIConfig) field.ErrorList {
 	allErrs := field.ErrorList{}
-	if k.KubeConfig != "" && !path.IsAbs(k.KubeConfig) {
+	if k.KubeConfig != "" && !filepath.IsAbs(k.KubeConfig) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("kubeconfig"), k.KubeConfig, "kubeconfig need abs path"))
 	}
 	if k.KubeConfig != "" && !utilvalidation.FileIsExist(k.KubeConfig) {

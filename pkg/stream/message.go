@@ -23,15 +23,15 @@ import (
 	"io"
 	"io/ioutil"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 type MessageType uint64
 
 const (
-	MessageTypeLogsConnect   MessageType = iota
-	MessageTypeExecConnect   MessageType = iota
-	MessageTypeMetricConnect MessageType = iota
+	MessageTypeLogsConnect MessageType = iota
+	MessageTypeExecConnect
+	MessageTypeMetricConnect
 	MessageTypeData
 	MessageTypeRemoveConnect
 )
@@ -67,10 +67,6 @@ func NewMessage(id uint64, messType MessageType, data []byte) *Message {
 	}
 }
 
-func (m *Message) WriteTo(tunneler SafeWriteTunneler) error {
-	return tunneler.WriteMessage(m)
-}
-
 func (m *Message) Bytes() []byte {
 	// connectID + MessageType + Data
 	buf, offset := make([]byte, 16), 0
@@ -97,7 +93,7 @@ func ReadMessageFromTunnel(r io.Reader) (*Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	klog.Infof("Receive Tunnel message Connectid %d messageType %s data:%v string:[%v]",
+	klog.V(6).Infof("Receive Tunnel message Connectid %d messageType %s data:%v string:[%v]",
 		connectID, MessageType(messageType), data, string(data))
 	return &Message{
 		ConnectID:   connectID,

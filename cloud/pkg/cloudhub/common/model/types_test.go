@@ -83,17 +83,12 @@ func TestIsNodeStopped(t *testing.T) {
 		"timestamp":  time.Now().Unix(),
 	}
 	content, _ := json.Marshal(body)
-	bodyAction := map[string]interface{}{
-		"event_type": OpConnect,
-		"timestamp":  time.Now().Unix(),
-		"action":     "stop",
-	}
+
 	msgResource := modelMessage("", "", 0, "", "", "", "Resource1", nil)
-	msgOpDelete := modelMessage("", "", 0, "", "", OpDelete, "node/Node1", nil)
-	msgNoContent := modelMessage("", "", 0, "", "", "", "node/Node1", nil)
-	msgContent := modelMessage("", "", 0, "", "", OpUpdate, "node/Node1", content)
-	msgNoAction := modelMessage("", "", 0, "", "", OpUpdate, "node/Node1", body)
-	msgActionStop := modelMessage("", "", 0, "", "", OpUpdate, "node/Node1", bodyAction)
+	msgOpDelete := modelMessage("", "", 0, "", "", model.DeleteOperation, "node/edge-node/default/node/Node1", nil)
+	msgNoContent := modelMessage("", "", 0, "", "", "", "node/edge-node/default/node/Node1", nil)
+	msgContent := modelMessage("", "", 0, "", "", model.UpdateOperation, "node/edge-node/default/node/Node1", content)
+	msgNoAction := modelMessage("", "", 0, "", "", model.UpdateOperation, "node/edge-node/default/node/Node1", body)
 	tests := []struct {
 		name      string
 		msg       *model.Message
@@ -124,11 +119,6 @@ func TestIsNodeStopped(t *testing.T) {
 			msg:       &msgNoAction,
 			errorWant: false,
 		},
-		{
-			name:      "TestIsNodeStopped(): Case 6: msg.Content[action]=stop",
-			msg:       &msgActionStop,
-			errorWant: true,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -141,21 +131,30 @@ func TestIsNodeStopped(t *testing.T) {
 
 // TestIsFromEdge is function to test IsFromEdge
 func TestIsFromEdge(t *testing.T) {
-	msg := modelMessage("", "", 0, "Source1", "", "", "", nil)
 	tests := []struct {
 		name      string
-		msg       *model.Message
+		msg       model.Message
 		errorWant bool
 	}{
 		{
 			name:      "TestIsFromEdge(): when the msg is sent from edge",
-			msg:       &msg,
+			msg:       modelMessage("", "", 0, "Source1", "", "", "", nil),
 			errorWant: true,
+		},
+		{
+			name:      "TestIsFromEdge(): when the msg is also sent from edge",
+			msg:       modelMessage("", "", 0, "edged", "", "", "", nil),
+			errorWant: true,
+		},
+		{
+			name:      "TestIsFromEdge(): when the msg is not sent from edge",
+			msg:       modelMessage("", "", 0, "edgecontroller", "", "", "", nil),
+			errorWant: false,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if errorWant := IsFromEdge(test.msg); !reflect.DeepEqual(errorWant, test.errorWant) {
+			if errorWant := IsFromEdge(&test.msg); !reflect.DeepEqual(errorWant, test.errorWant) {
 				t.Errorf("Model.TestIsFromEdge() case failed: got = %v, Want = %v", errorWant, test.errorWant)
 			}
 		})
@@ -192,6 +191,56 @@ func TestIsToEdge(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if errorWant := IsToEdge(test.msg); !reflect.DeepEqual(errorWant, test.errorWant) {
 				t.Errorf("Model.TestIsToEdge() case failed: got = %v, Want = %v", errorWant, test.errorWant)
+			}
+		})
+	}
+}
+
+func messageWithContent(content interface{}) model.Message {
+	return modelMessage("", "", 0, "", "", "", "", content)
+}
+
+func TestGetContent(t *testing.T) {
+	type testStruct struct {
+		name string
+		id   int
+	}
+
+	ts := testStruct{
+		name: "test",
+		id:   0,
+	}
+
+	tests := []struct {
+		name   string
+		msg    model.Message
+		wanted string
+	}{
+		{
+			name:   "TestGetContent(): Case 1: empty content",
+			msg:    messageWithContent(nil),
+			wanted: "<nil>",
+		},
+		{
+			name:   "TestGetContent(): Case 2: content includes int",
+			msg:    messageWithContent(1111),
+			wanted: "1111",
+		},
+		{
+			name:   "TestGetContent(): Case 3: content includes string",
+			msg:    messageWithContent("test"),
+			wanted: "test",
+		},
+		{
+			name:   "TestGetContent(): Case 4: content includes struct",
+			msg:    messageWithContent(ts),
+			wanted: "{test 0}",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if result := GetContent(&test.msg); !reflect.DeepEqual(result, test.wanted) {
+				t.Errorf("Model.TestGetContent() case failed: got = %v, Want = %v", result, test.wanted)
 			}
 		})
 	}

@@ -6,18 +6,21 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/api/core/v1"
-	"k8s.io/klog"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/common/util"
+	"github.com/kubeedge/beehive/pkg/core"
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
 	"github.com/kubeedge/beehive/pkg/core/model"
+	cloudmodules "github.com/kubeedge/kubeedge/cloud/pkg/common/modules"
 	"github.com/kubeedge/kubeedge/common/constants"
 	connect "github.com/kubeedge/kubeedge/edge/pkg/common/cloudconnection"
 	messagepkg "github.com/kubeedge/kubeedge/edge/pkg/common/message"
 	"github.com/kubeedge/kubeedge/edge/pkg/common/modules"
 	metaManagerConfig "github.com/kubeedge/kubeedge/edge/pkg/metamanager/config"
 	"github.com/kubeedge/kubeedge/edge/pkg/metamanager/dao"
+	"github.com/kubeedge/kubeedge/edge/pkg/metamanager/metaserver/kubernetes/storage/sqlite/imitator"
 )
 
 //Constants to check metamanager processes
@@ -58,6 +61,10 @@ func sendToEdged(message *model.Message, sync bool) {
 }
 
 func sendToEdgeMesh(message *model.Message, sync bool) {
+	// if edgeMesh module disabled, then return
+	if _, ok := core.GetModules()[modules.EdgeMeshModuleName]; !ok {
+		return
+	}
 	if sync {
 		beehiveContext.SendResp(*message)
 	} else {
@@ -138,6 +145,7 @@ func (m *metaManager) processInsert(message model.Message) {
 			return
 		}
 	}
+	imitator.DefaultV2Client.Inject(message)
 	resKey, resType, _ := parseResource(message.GetResource())
 	switch resType {
 	case constants.ResourceTypeServiceList:
@@ -211,6 +219,7 @@ func (m *metaManager) processUpdate(message model.Message) {
 			return
 		}
 	}
+	imitator.DefaultV2Client.Inject(message)
 
 	resKey, resType, _ := parseResource(message.GetResource())
 	if resType == constants.ResourceTypeServiceList || resType == constants.ResourceTypeEndpointsList || resType == model.ResourceTypePodlist {
@@ -319,7 +328,7 @@ func (m *metaManager) processUpdate(message model.Message) {
 		sendToCloud(&message)
 		resp := message.NewRespByMessage(&message, OK)
 		sendToEdged(resp, message.IsSync())
-	case CloudControlerModel:
+	case cloudmodules.EdgeControllerModuleName, cloudmodules.DynamicControllerModuleName:
 		if isEdgeMeshResource(resType) {
 			sendToEdgeMesh(&message, message.IsSync())
 		} else {
@@ -377,6 +386,7 @@ func (m *metaManager) processResponse(message model.Message) {
 }
 
 func (m *metaManager) processDelete(message model.Message) {
+	imitator.DefaultV2Client.Inject(message)
 	err := dao.DeleteMetaByKey(message.GetResource())
 	if err != nil {
 		klog.Errorf("delete meta failed, %s", msgDebugInfo(&message))
@@ -455,7 +465,7 @@ func (m *metaManager) processRemoteQuery(message model.Message) {
 		resp, err := beehiveContext.SendSync(
 			string(metaManagerConfig.Config.ContextSendModule),
 			message,
-			60*time.Second) // TODO: configurable
+			time.Duration(metaManagerConfig.Config.RemoteQueryTimeout)*time.Second)
 		klog.Infof("########## process get: req[%+v], resp[%+v], err[%+v]", message, resp, err)
 		if err != nil {
 			klog.Errorf("remote query failed: %v", err)
@@ -507,12 +517,12 @@ func (m *metaManager) processNodeConnection(message model.Message) {
 	}
 }
 
-func (m *metaManager) processSync(message model.Message) {
+func (m *metaManager) processSync() {
 	m.syncPodStatus()
 }
 
 func (m *metaManager) syncPodStatus() {
-	klog.Infof("start to sync pod status")
+	klog.Infof("start to sync pod status in edge-store to cloud")
 	podStatusRecords, err := dao.QueryAllMeta("type", model.ResourceTypePodStatus)
 	if err != nil {
 		klog.Errorf("list pod status failed: %v", err)
@@ -522,13 +532,9 @@ func (m *metaManager) syncPodStatus() {
 		klog.Infof("list pod status, no record, skip sync")
 		return
 	}
-
-	var namespace string
-	content := make([]interface{}, 0, len(*podStatusRecords))
+	contents := make(map[string][]interface{})
 	for _, v := range *podStatusRecords {
-		if namespace == "" {
-			namespace, _, _, _ = util.ParseResourceEdge(v.Key, model.QueryOperation)
-		}
+		namespaceParsed, _, _, _ := util.ParseResourceEdge(v.Key, model.QueryOperation)
 		podKey := strings.Replace(v.Key, constants.ResourceSep+model.ResourceTypePodStatus+constants.ResourceSep, constants.ResourceSep+model.ResourceTypePod+constants.ResourceSep, 1)
 		podRecord, err := dao.QueryMeta("key", podKey)
 		if err != nil {
@@ -549,16 +555,16 @@ func (m *metaManager) syncPodStatus() {
 			klog.Errorf("unmarshal podstatus[%s] failed, content[%s]: %v", v.Key, v.Value, err)
 			continue
 		}
-		content = append(content, podStatus)
+		contents[namespaceParsed] = append(contents[namespaceParsed], podStatus)
 	}
-
-	msg := model.NewMessage("").BuildRouter(MetaManagerModuleName, GroupResource, namespace+constants.ResourceSep+model.ResourceTypePodStatus, model.UpdateOperation).FillBody(content)
-	sendToCloud(msg)
-	klog.Infof("sync pod status successful, %s", msgDebugInfo(msg))
+	for namespace, content := range contents {
+		msg := model.NewMessage("").BuildRouter(MetaManagerModuleName, GroupResource, namespace+constants.ResourceSep+model.ResourceTypePodStatus, model.UpdateOperation).FillBody(content)
+		sendToCloud(msg)
+		klog.V(3).Infof("sync pod status successfully for namespaces %s, %s", namespace, msgDebugInfo(msg))
+	}
 }
 
 func (m *metaManager) processFunctionAction(message model.Message) {
-
 	var err error
 	var content []byte
 	switch message.GetContent().(type) {
@@ -616,7 +622,6 @@ func (m *metaManager) processFunctionActionResult(message model.Message) {
 	}
 
 	sendToCloud(&message)
-
 }
 
 func (m *metaManager) processVolume(message model.Message) {
@@ -648,7 +653,7 @@ func (m *metaManager) process(message model.Message) {
 	case messagepkg.OperationNodeConnection:
 		m.processNodeConnection(message)
 	case OperationMetaSync:
-		m.processSync(message)
+		m.processSync()
 	case OperationFunctionAction:
 		m.processFunctionAction(message)
 	case OperationFunctionActionResult:
@@ -669,10 +674,9 @@ func (m *metaManager) runMetaManager() {
 				klog.Warning("MetaManager mainloop stop")
 				return
 			default:
-
 			}
 			if msg, err := beehiveContext.Receive(m.Name()); err == nil {
-				klog.Infof("get a message %+v", msg)
+				klog.V(2).Infof("get a message %+v", msg)
 				m.process(msg)
 			} else {
 				klog.Errorf("get a message %+v: %v", msg, err)

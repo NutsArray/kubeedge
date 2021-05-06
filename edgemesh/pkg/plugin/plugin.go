@@ -7,8 +7,11 @@ import (
 	"github.com/go-chassis/go-chassis/core/config/model"
 	"github.com/go-chassis/go-chassis/core/loadbalancer"
 	"github.com/go-chassis/go-chassis/core/registry"
+	"k8s.io/klog/v2"
 
 	meshConfig "github.com/kubeedge/kubeedge/edgemesh/pkg/config"
+
+	// Register panel to aviod panic error
 	_ "github.com/kubeedge/kubeedge/edgemesh/pkg/plugin/panel"
 	meshRegistry "github.com/kubeedge/kubeedge/edgemesh/pkg/plugin/registry"
 )
@@ -42,7 +45,11 @@ func Install() {
 		Infra:   config.GlobalDefinition.Panel.Infra,
 		Address: config.GlobalDefinition.Panel.Settings["address"],
 	}
-	control.Init(opts)
+	if err := control.Init(opts); err != nil {
+		klog.Errorf("failed to init control: %v", err)
+	}
 	// init archaius
-	archaius.Init()
+	if err := archaius.Init(); err != nil {
+		klog.Errorf("failed to init archaius: %v", err)
+	}
 }

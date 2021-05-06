@@ -25,14 +25,16 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/kubeedge/kubeedge/cloud/pkg/apis/devices/v1alpha1"
+	"github.com/kubeedge/kubeedge/cloud/pkg/apis/devices/v1alpha2"
 	"github.com/kubeedge/kubeedge/tests/e2e/utils"
 )
 
 const (
-	DeviceInstanceHandler = "/apis/devices.kubeedge.io/v1alpha1/namespaces/default/devices"
-	DeviceModelHandler    = "/apis/devices.kubeedge.io/v1alpha1/namespaces/default/devicemodels"
+	DeviceInstanceHandler = "/apis/devices.kubeedge.io/v1alpha2/namespaces/default/devices"
+	DeviceModelHandler    = "/apis/devices.kubeedge.io/v1alpha2/namespaces/default/devicemodels"
 	ConfigmapHandler      = "/api/v1/namespaces/default/configmaps"
+
+	off = "OFF"
 )
 
 var CRDTestTimerGroup *utils.TestTimerGroup = utils.NewTestTimerGroup()
@@ -43,8 +45,8 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 	var testDescription GinkgoTestDescription
 	Context("Test Device Model Creation, Updation and deletion", func() {
 		BeforeEach(func() {
-			// Delete any pre-exisitng device models
-			var deviceModelList v1alpha1.DeviceModelList
+			// Delete any pre-existing device models
+			var deviceModelList v1alpha2.DeviceModelList
 			list, err := utils.GetDeviceModel(&deviceModelList, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, nil)
 			Expect(err).To(BeNil())
 			for _, model := range list {
@@ -63,7 +65,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			// Print result
 			testTimer.PrintResult()
 			// Delete the device models created
-			var deviceModelList v1alpha1.DeviceModelList
+			var deviceModelList v1alpha2.DeviceModelList
 			list, err := utils.GetDeviceModel(&deviceModelList, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, nil)
 			Expect(err).To(BeNil())
 			for _, model := range list {
@@ -74,7 +76,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			utils.PrintTestcaseNameandStatus()
 		})
 		It("E2E_CREATE_DEVICE_MODEL_1: Create device model for LED device (No Protocol)", func() {
-			var deviceModelList v1alpha1.DeviceModelList
+			var deviceModelList v1alpha2.DeviceModelList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "led")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -83,7 +85,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(err).To(BeNil())
 		})
 		It("E2E_CREATE_DEVICE_MODEL_2: Create device model for bluetooth protocol", func() {
-			var deviceModelList v1alpha1.DeviceModelList
+			var deviceModelList v1alpha2.DeviceModelList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "bluetooth")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -92,7 +94,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(err).To(BeNil())
 		})
 		It("E2E_CREATE_DEVICE_MODEL_3: Create device model for modbus protocol", func() {
-			var deviceModelList v1alpha1.DeviceModelList
+			var deviceModelList v1alpha2.DeviceModelList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "modbus")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -105,7 +107,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(statusCode).Should(Equal(http.StatusUnprocessableEntity))
 		})
 		It("E2E_UPDATE_DEVICE_MODEL_1: Update device model for LED device (No Protocol)", func() {
-			var deviceModelList v1alpha1.DeviceModelList
+			var deviceModelList v1alpha2.DeviceModelList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "led")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -117,7 +119,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(err).To(BeNil())
 		})
 		It("E2E_UPDATE_DEVICE_MODEL_2: Update device model for bluetooth protocol", func() {
-			var deviceModelList v1alpha1.DeviceModelList
+			var deviceModelList v1alpha2.DeviceModelList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "bluetooth")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -129,7 +131,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(err).To(BeNil())
 		})
 		It("E2E_UPDATE_DEVICE_MODEL_3: Update device model for modbus protocol", func() {
-			var deviceModelList v1alpha1.DeviceModelList
+			var deviceModelList v1alpha2.DeviceModelList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "modbus")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -156,8 +158,8 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 	})
 	Context("Test Device Instance Creation, Updation and Deletion", func() {
 		BeforeEach(func() {
-			var deviceModelList v1alpha1.DeviceModelList
-			var deviceList v1alpha1.DeviceList
+			var deviceModelList v1alpha2.DeviceModelList
+			var deviceList v1alpha2.DeviceList
 			// Delete the device instances created
 			deviceInstanceList, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nil)
 			Expect(err).To(BeNil())
@@ -166,7 +168,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 				Expect(IsDeviceDeleted).Should(BeTrue())
 				Expect(statusCode).Should(Equal(http.StatusOK))
 			}
-			// Delete any pre-exisitng device models
+			// Delete any pre-existing device models
 			list, err := utils.GetDeviceModel(&deviceModelList, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, nil)
 			Expect(err).To(BeNil())
 			for _, model := range list {
@@ -185,8 +187,8 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			testTimer.End()
 			// Print result
 			testTimer.PrintResult()
-			var deviceModelList v1alpha1.DeviceModelList
-			var deviceList v1alpha1.DeviceList
+			var deviceModelList v1alpha2.DeviceModelList
+			var deviceList v1alpha2.DeviceList
 			// Delete the device instances created
 			deviceInstanceList, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nil)
 			Expect(err).To(BeNil())
@@ -206,7 +208,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			utils.PrintTestcaseNameandStatus()
 		})
 		It("E2E_CREATE_DEVICE_1: Create device instance for LED device (No Protocol)", func() {
-			var deviceList v1alpha1.DeviceList
+			var deviceList v1alpha2.DeviceList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "led")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -243,7 +245,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(isEqual).Should(Equal(true))
 		})
 		It("E2E_CREATE_DEVICE_2: Create device instance for bluetooth protocol", func() {
-			var deviceList v1alpha1.DeviceList
+			var deviceList v1alpha2.DeviceList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "bluetooth")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -280,7 +282,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(isEqual).Should(Equal(true))
 		})
 		It("E2E_CREATE_DEVICE_3: Create device instance for modbus protocol", func() {
-			var deviceList v1alpha1.DeviceList
+			var deviceList v1alpha2.DeviceList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "modbus")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -302,7 +304,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Eventually(func() bool {
 				return utils.TwinResult.Twin != nil
 			}, "20s", "2s").Should(Equal(true), "Device information not reaching edge!!")
-			stringValue := "OFF"
+			stringValue := off
 			expectedTwin := map[string]*utils.MsgTwin{
 				"temperature-enable": {
 					Expected: &utils.TwinValue{
@@ -328,14 +330,59 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			statusCode, _ = utils.GetConfigmap(ctx.Cfg.K8SMasterForKubeEdge + ConfigmapHandler + "/" + "device-profile-config-" + nodeName)
 			Expect(statusCode).Should(Equal(http.StatusNotFound))
 		})
+		It("E2E_CREATE_DEVICE_5: Create device instance for customized protocol", func() {
+			var deviceList v1alpha2.DeviceList
+			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "customized")
+			Expect(IsDeviceModelCreated).Should(BeTrue())
+			Expect(statusCode).Should(Equal(http.StatusCreated))
+			IsDeviceCreated, statusCode := utils.HandleDeviceInstance(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "", "customized")
+			Expect(IsDeviceCreated).Should(BeTrue())
+			Expect(statusCode).Should(Equal(http.StatusCreated))
+			newCustomizedDevice := utils.NewCustomizedDeviceInstance(nodeName)
+			_, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, &newCustomizedDevice)
+			Expect(err).To(BeNil())
+			time.Sleep(3 * time.Second)
+			statusCode, body := utils.GetConfigmap(ctx.Cfg.K8SMasterForKubeEdge + ConfigmapHandler + "/" + "device-profile-config-" + nodeName)
+			Expect(statusCode).Should(Equal(http.StatusOK))
+			var configMap v1.ConfigMap
+			err = json.Unmarshal(body, &configMap)
+			Expect(err).To(BeNil())
+			isEqual := utils.CompareConfigMaps(configMap, utils.NewConfigMapCustomized(nodeName))
+			Expect(isEqual).Should(Equal(true))
+			go utils.TwinSubscribe(utils.NewCustomizedDeviceInstance(nodeName).Name)
+			Eventually(func() bool {
+				return utils.TwinResult.Twin != nil
+			}, "20s", "2s").Should(Equal(true), "Device information not reaching edge!!")
+			stringValue := "OFF"
+			expectedTwin := map[string]*utils.MsgTwin{
+				"temperature-enable": {
+					Expected: &utils.TwinValue{
+						Value: &stringValue,
+					},
+					Metadata: &utils.TypeMetadata{
+						Type: "string",
+					},
+				},
+			}
+			isEqual = utils.CompareTwin(utils.TwinResult.Twin, expectedTwin)
+			Expect(isEqual).Should(Equal(true))
+		})
 		It("E2E_UPDATE_DEVICE_1: Update device instance for LED device (No Protocol)", func() {
-			var deviceList v1alpha1.DeviceList
+			var deviceList v1alpha2.DeviceList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "led")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
 			IsDeviceCreated, statusCode := utils.HandleDeviceInstance(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "", "led")
 			Expect(IsDeviceCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
+
+			newLedDevice := utils.NewLedDeviceInstance(nodeName)
+			time.Sleep(2 * time.Second)
+			Eventually(func() bool {
+				_, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, &newLedDevice)
+				return err == nil
+			}, "20s", "2s").Should(Equal(true), "Device creation is not finished!!")
+
 			IsDeviceUpdated, statusCode := utils.HandleDeviceInstance(http.MethodPatch, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "/"+utils.UpdatedLedDeviceInstance(nodeName).Name, "led")
 			Expect(IsDeviceUpdated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusOK))
@@ -347,7 +394,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Eventually(func() bool {
 				return utils.TwinResult.Twin != nil
 			}, "20s", "2s").Should(Equal(true), "Device information not reaching edge!!")
-			stringValue := "OFF"
+			stringValue := off
 			expectedTwin := map[string]*utils.MsgTwin{
 				"power-status": {
 					Expected: &utils.TwinValue{
@@ -362,13 +409,21 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(isEqual).Should(Equal(true))
 		})
 		It("E2E_UPDATE_DEVICE_2: Update device instance for bluetooth protocol", func() {
-			var deviceList v1alpha1.DeviceList
+			var deviceList v1alpha2.DeviceList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "bluetooth")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
 			IsDeviceCreated, statusCode := utils.HandleDeviceInstance(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "", "bluetooth")
 			Expect(IsDeviceCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
+
+			newBluetoothDevice := utils.NewBluetoothDeviceInstance(nodeName)
+			time.Sleep(2 * time.Second)
+			Eventually(func() bool {
+				_, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, &newBluetoothDevice)
+				return err == nil
+			}, "20s", "2s").Should(Equal(true), "Device creation is not finished!!")
+
 			IsDeviceUpdated, statusCode := utils.HandleDeviceInstance(http.MethodPatch, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "/"+utils.UpdatedBluetoothDeviceInstance(nodeName).Name, "bluetooth")
 			Expect(IsDeviceUpdated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusOK))
@@ -395,13 +450,21 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(isEqual).Should(Equal(true))
 		})
 		It("E2E_UPDATE_DEVICE_3: Update device instance for modbus protocol", func() {
-			var deviceList v1alpha1.DeviceList
+			var deviceList v1alpha2.DeviceList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "modbus")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
 			IsDeviceCreated, statusCode := utils.HandleDeviceInstance(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "", "modbus")
 			Expect(IsDeviceCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
+
+			newModbusDevice := utils.NewModbusDeviceInstance(nodeName)
+			time.Sleep(2 * time.Second)
+			Eventually(func() bool {
+				_, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, &newModbusDevice)
+				return err == nil
+			}, "20s", "2s").Should(Equal(true), "Device creation is not finished!!")
+
 			IsDeviceUpdated, statusCode := utils.HandleDeviceInstance(http.MethodPatch, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "/"+utils.UpdatedModbusDeviceInstance(nodeName).Name, "modbus")
 			Expect(IsDeviceUpdated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusOK))
@@ -438,6 +501,41 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(IsDeviceUpdated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusUnprocessableEntity))
 		})
+		It("E2E_UPDATE_DEVICE_4: Update device instance data and twin for modbus protocol", func() {
+			var deviceList v1alpha2.DeviceList
+			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "modbus")
+			Expect(IsDeviceModelCreated).Should(BeTrue())
+			Expect(statusCode).Should(Equal(http.StatusCreated))
+			IsDeviceCreated, statusCode := utils.HandleDeviceInstance(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "", "modbus")
+			Expect(IsDeviceCreated).Should(BeTrue())
+			Expect(statusCode).Should(Equal(http.StatusCreated))
+			newModbusDevice := utils.NewModbusDeviceInstance(nodeName)
+			_, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, &newModbusDevice)
+			Expect(err).To(BeNil())
+			time.Sleep(3 * time.Second)
+			statusCode, body := utils.GetConfigmap(ctx.Cfg.K8SMasterForKubeEdge + ConfigmapHandler + "/" + "device-profile-config-" + nodeName)
+			Expect(statusCode).Should(Equal(http.StatusOK))
+			var configMap v1.ConfigMap
+			err = json.Unmarshal(body, &configMap)
+			Expect(err).To(BeNil())
+			isEqual := utils.CompareConfigMaps(configMap, utils.NewConfigMapModbus(nodeName))
+			Expect(isEqual).Should(Equal(true))
+			// update twins and data section should reflect on change on config map
+			IsDeviceUpdated, statusCode := utils.HandleDeviceInstance(http.MethodPatch, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "/"+utils.UpdatedModbusDeviceInstance(nodeName).Name, "modbus")
+			Expect(IsDeviceUpdated).Should(BeTrue())
+			Expect(statusCode).Should(Equal(http.StatusOK))
+			updatedModbusDevice := utils.UpdatedModbusDeviceInstance(nodeName)
+			time.Sleep(3 * time.Second)
+			_, err = utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, &updatedModbusDevice)
+			Expect(err).To(BeNil())
+			statusCode, body = utils.GetConfigmap(ctx.Cfg.K8SMasterForKubeEdge + ConfigmapHandler + "/" + "device-profile-config-" + nodeName)
+			Expect(statusCode).Should(Equal(http.StatusOK))
+			var updatedConfigMap v1.ConfigMap
+			err = json.Unmarshal(body, &updatedConfigMap)
+			Expect(err).To(BeNil())
+			isEqual = utils.CompareDeviceProfileInConfigMaps(updatedConfigMap, utils.UpdatedConfigMapModbusForDataAndTwins(nodeName))
+			Expect(isEqual).Should(Equal(true))
+		})
 		It("E2E_DELETE_DEVICE_1: Delete device instance for an existing device (No Protocol)", func() {
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "led")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
@@ -460,11 +558,25 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			Expect(IsDeviceDeleted).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusNotFound))
 		})
+		It("E2E_DELETE_DEVICE_3: Delete device instance without device model", func() {
+			IsDeviceCreated, statusCode := utils.HandleDeviceInstance(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "", "led")
+			Expect(IsDeviceCreated).Should(BeTrue())
+			Expect(statusCode).Should(Equal(http.StatusCreated))
+			time.Sleep(1 * time.Second)
+			statusCode, _ = utils.GetConfigmap(ctx.Cfg.K8SMasterForKubeEdge + ConfigmapHandler + "/" + "device-profile-config-" + nodeName)
+			Expect(statusCode).Should(Equal(http.StatusOK))
+			IsDeviceDeleted, statusCode := utils.HandleDeviceInstance(http.MethodDelete, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nodeName, "/"+utils.NewLedDeviceInstance(nodeName).Name, "")
+			Expect(IsDeviceDeleted).Should(BeTrue())
+			Expect(statusCode).Should(Equal(http.StatusOK))
+			time.Sleep(1 * time.Second)
+			statusCode, _ = utils.GetConfigmap(ctx.Cfg.K8SMasterForKubeEdge + ConfigmapHandler + "/" + "device-profile-config-" + nodeName)
+			Expect(statusCode).Should(Equal(http.StatusNotFound))
+		})
 	})
 	Context("Test Change in device twin", func() {
 		BeforeEach(func() {
-			var deviceModelList v1alpha1.DeviceModelList
-			var deviceList v1alpha1.DeviceList
+			var deviceModelList v1alpha2.DeviceModelList
+			var deviceList v1alpha2.DeviceList
 			// Delete the device instances created
 			deviceInstanceList, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nil)
 			Expect(err).To(BeNil())
@@ -473,7 +585,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 				Expect(IsDeviceDeleted).Should(BeTrue())
 				Expect(statusCode).Should(Equal(http.StatusOK))
 			}
-			// Delete any pre-exisitng device models
+			// Delete any pre-existing device models
 			list, err := utils.GetDeviceModel(&deviceModelList, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, nil)
 			Expect(err).To(BeNil())
 			for _, model := range list {
@@ -492,8 +604,8 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			testTimer.End()
 			// Print result
 			testTimer.PrintResult()
-			var deviceModelList v1alpha1.DeviceModelList
-			var deviceList v1alpha1.DeviceList
+			var deviceModelList v1alpha2.DeviceModelList
+			var deviceList v1alpha2.DeviceList
 			// Delete the device instances created
 			deviceInstanceList, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, nil)
 			Expect(err).To(BeNil())
@@ -513,7 +625,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			utils.PrintTestcaseNameandStatus()
 		})
 		It("E2E_TWIN_STATE_1: Change the twin state of an existing device", func() {
-			var deviceList v1alpha1.DeviceList
+			var deviceList v1alpha2.DeviceList
 			IsDeviceModelCreated, statusCode := utils.HandleDeviceModel(http.MethodPost, ctx.Cfg.K8SMasterForKubeEdge+DeviceModelHandler, "", "led")
 			Expect(IsDeviceModelCreated).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusCreated))
@@ -523,7 +635,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			newLedDevice := utils.NewLedDeviceInstance(nodeName)
 			time.Sleep(3 * time.Second)
 			var deviceTwinUpdateMessage utils.DeviceTwinUpdate
-			reportedValue := "OFF"
+			reportedValue := off
 			deviceTwinUpdateMessage.Twin = map[string]*utils.MsgTwin{
 				"power-status": {Actual: &utils.TwinValue{Value: &reportedValue}, Metadata: &utils.TypeMetadata{Type: "string"}},
 			}
@@ -534,7 +646,7 @@ var _ = Describe("Device Management test in E2E scenario", func() {
 			list, err := utils.GetDevice(&deviceList, ctx.Cfg.K8SMasterForKubeEdge+DeviceInstanceHandler, &newLedDevice)
 			Expect(err).To(BeNil())
 			Expect(list[0].Status.Twins[0].PropertyName).To(Equal("power-status"))
-			Expect(list[0].Status.Twins[0].Reported.Value).To(Equal("OFF"))
+			Expect(list[0].Status.Twins[0].Reported.Value).To(Equal(off))
 		})
 	})
 })

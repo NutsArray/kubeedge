@@ -34,11 +34,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	storagelisters "k8s.io/client-go/listers/storage/v1beta1"
+	storagelisters "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/tools/cache"
 	recordtools "k8s.io/client-go/tools/record"
 	cloudprovider "k8s.io/cloud-provider"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/util/hostutil"
 	"k8s.io/kubernetes/pkg/volume/util/subpath"
@@ -138,8 +138,14 @@ func (evh *edgedVolumeHost) GetConfigMapFunc() func(namespace, name string) (*ap
 func (evh *edgedVolumeHost) GetExec(pluginName string) utilexec.Interface  { return nil }
 func (evh *edgedVolumeHost) GetHostIP() (net.IP, error)                    { return nil, nil }
 func (evh *edgedVolumeHost) GetNodeAllocatable() (api.ResourceList, error) { return nil, nil }
-func (evh *edgedVolumeHost) GetNodeLabels() (map[string]string, error)     { return nil, nil }
-func (evh *edgedVolumeHost) GetNodeName() types.NodeName                   { return types.NodeName(evh.edge.nodeName) }
+func (evh *edgedVolumeHost) GetNodeLabels() (map[string]string, error) {
+	node, err := evh.edge.initialNode()
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving node: %v", err)
+	}
+	return node.Labels, nil
+}
+func (evh *edgedVolumeHost) GetNodeName() types.NodeName { return types.NodeName(evh.edge.nodeName) }
 func (evh *edgedVolumeHost) GetPodVolumeDeviceDir(podUID types.UID, pluginName string) string {
 	return ""
 }

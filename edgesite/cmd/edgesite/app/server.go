@@ -4,12 +4,15 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"k8s.io/apiserver/pkg/util/term"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/cli/globalflag"
-	"k8s.io/klog"
+	"k8s.io/component-base/term"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/core"
+	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
+	"github.com/kubeedge/kubeedge/cloud/pkg/common/client"
+	"github.com/kubeedge/kubeedge/cloud/pkg/common/informers"
 	"github.com/kubeedge/kubeedge/cloud/pkg/edgecontroller"
 	"github.com/kubeedge/kubeedge/edge/pkg/common/dbm"
 	"github.com/kubeedge/kubeedge/edge/pkg/edged"
@@ -28,9 +31,9 @@ func NewEdgeSiteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "edgesite",
 		Long: `EdgeSite helps running lightweight clusters at edge, which contains three modules: edgecontroller,
-metamanager, and edged. EdgeController is an extended kubernetes controller which manages edge nodes and pods metadata 
-so that the data can be targeted to a specific edge node. MetaManager is the message processor between edged and edgehub. 
-It is also responsible for storing/retrieving metadata to/from a lightweight database (SQLite).Edged is an agent that 
+metamanager, and edged. EdgeController is an extended kubernetes controller which manages edge nodes and pods metadata
+so that the data can be targeted to a specific edge node. MetaManager is the message processor between edged and edgehub.
+It is also responsible for storing/retrieving metadata to/from a lightweight database (SQLite).Edged is an agent that
 runs on edge nodes and manages containerized applications.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			verflag.PrintAndExitIfRequested()
@@ -53,7 +56,9 @@ runs on edge nodes and manages containerized applications.`,
 
 			// To help debugging, immediately log version
 			klog.Infof("Version: %+v", version.Get())
-
+			client.InitKubeEdgeClient(config.KubeAPIConfig)
+			gis := informers.GetInformersManager()
+			gis.Start(beehiveContext.Done())
 			registerModules(config)
 			// start all modules
 			core.Run()
@@ -85,7 +90,7 @@ runs on edge nodes and manages containerized applications.`,
 // registerModules register all the modules started in edgesite
 func registerModules(c *v1alpha1.EdgeSiteConfig) {
 	edged.Register(c.Modules.Edged)
-	edgecontroller.Register(c.Modules.EdgeController, c.KubeAPIConfig, c.Modules.Edged.HostnameOverride, true)
+	edgecontroller.Register(c.Modules.EdgeController)
 	metamanager.Register(c.Modules.MetaManager)
 	// Nodte: Need to put it to the end, and wait for all models to register before executing
 	dbm.InitDBConfig(c.DataBase.DriverName, c.DataBase.AliasName, c.DataBase.DataSource)

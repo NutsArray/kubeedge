@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
 	"github.com/kubeedge/beehive/pkg/core/model"
@@ -42,7 +42,10 @@ func StartServer(address string) {
 	})
 
 	klog.Info("start unix domain socket server")
-	uds.StartServer()
+	if err := uds.StartServer(); err != nil {
+		klog.Fatalf("failed to start uds server: %v", err)
+		return
+	}
 }
 
 // ExtractMessage extracts message from clients

@@ -22,22 +22,19 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"sigs.k8s.io/yaml"
 
 	"github.com/kubeedge/kubeedge/common/constants"
 )
 
 //Write2File writes data into a file in path
 func Write2File(path string, data interface{}) error {
-	d, err := yaml.Marshal(&data)
+	d, err := yaml.Marshal(data)
 	if err != nil {
 		return err
 	}
 
-	if err = ioutil.WriteFile(path, d, 0666); err != nil {
-		return err
-	}
-	return nil
+	return ioutil.WriteFile(path, d, 0666)
 }
 
 //WriteControllerYamlFile writes controller.yaml for cloud component
@@ -74,10 +71,7 @@ func WriteControllerYamlFile(path, kubeConfig string) error {
 				KubeConfig:  ""},
 		},
 	}
-	if err := Write2File(path, controllerData); err != nil {
-		return err
-	}
-	return nil
+	return Write2File(path, controllerData)
 }
 
 //WriteCloudModulesYamlFile writes modules.yaml for cloud component
@@ -91,10 +85,7 @@ func WriteCloudModulesYamlFile(path string) error {
 			},
 		},
 	}
-	if err := Write2File(path, modulesData); err != nil {
-		return err
-	}
-	return nil
+	return Write2File(path, modulesData)
 }
 
 //WriteEdgeModulesYamlFile writes modules.yaml for edge component
@@ -112,15 +103,11 @@ func WriteEdgeModulesYamlFile(path string) error {
 			},
 		},
 	}
-	if err := Write2File(path, modulesData); err != nil {
-		return err
-	}
-	return nil
+	return Write2File(path, modulesData)
 }
 
 //WriteEdgeYamlFile write conf/edge.yaml for edge component
 func WriteEdgeYamlFile(path string, modifiedEdgeYaml *EdgeYamlSt) error {
-	iface := "eth0"
 	edgeID := "edge-node"
 	url := fmt.Sprintf("wss://0.0.0.0:10000/%s/edge-node/events", DefaultProjectID)
 	runtimeType := "docker"
@@ -132,9 +119,6 @@ func WriteEdgeYamlFile(path string, modifiedEdgeYaml *EdgeYamlSt) error {
 		}
 		if "" != modifiedEdgeYaml.EdgeD.RuntimeType {
 			runtimeType = modifiedEdgeYaml.EdgeD.RuntimeType
-		}
-		if "" != modifiedEdgeYaml.EdgeD.InterfaceName {
-			iface = modifiedEdgeYaml.EdgeD.InterfaceName
 		}
 	}
 
@@ -165,7 +149,6 @@ func WriteEdgeYamlFile(path string, modifiedEdgeYaml *EdgeYamlSt) error {
 		EdgeD: EdgeDSt{
 			RegisterNodeNamespace:             "default",
 			HostnameOverride:                  edgeID,
-			InterfaceName:                     iface,
 			NodeStatusUpdateFrequency:         10,
 			ConcurrentConsumers:               5,
 			DevicePluginEnabled:               false,
@@ -186,8 +169,5 @@ func WriteEdgeYamlFile(path string, modifiedEdgeYaml *EdgeYamlSt) error {
 			},
 		},
 	}
-	if err := Write2File(path, edgeData); err != nil {
-		return err
-	}
-	return nil
+	return Write2File(path, edgeData)
 }

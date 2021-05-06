@@ -11,7 +11,7 @@ import (
 	"time"
 	"unsafe"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/kubeedge/edge/pkg/metamanager/client"
 	"github.com/kubeedge/kubeedge/edgemesh/pkg/common"
@@ -125,7 +125,9 @@ func startDNS() {
 			klog.Warningf("[EdgeMesh] failed to resolve dns: %v", err)
 			continue
 		}
-		dnsConn.WriteTo(rsp, from)
+		if _, err = dnsConn.WriteTo(rsp, from); err != nil {
+			klog.Warningf("[EdgeMesh] failed to write: %v", err)
+		}
 	}
 }
 
@@ -202,10 +204,7 @@ func parseDNSQuery(req []byte) (que *dnsQuestion, err error) {
 
 // isAQuery judges if the dns pkg is a query
 func (h *dnsHeader) isAQuery() bool {
-	if h.flags&dnsQR != dnsQR {
-		return true
-	}
-	return false
+	return h.flags&dnsQR != dnsQR
 }
 
 // getHeader gets dns pkg head
@@ -279,16 +278,16 @@ func (q *dnsQuestion) getQName(req []byte, offset uint16) uint16 {
 }
 
 // lookupFromMetaManager confirms if the service exists
-func lookupFromMetaManager(serviceUrl string) (exist bool, ip string) {
-	name, namespace := common.SplitServiceKey(serviceUrl)
+func lookupFromMetaManager(serviceURL string) (exist bool, ip string) {
+	name, namespace := common.SplitServiceKey(serviceURL)
 	s, _ := metaClient.Services(namespace).Get(name)
 	if s != nil {
 		svcName := namespace + "." + name
 		ip := listener.GetServiceServer(svcName)
-		klog.Infof("[EdgeMesh] dns server parse %s ip %s", serviceUrl, ip)
+		klog.Infof("[EdgeMesh] dns server parse %s ip %s", serviceURL, ip)
 		return true, ip
 	}
-	klog.Errorf("[EdgeMesh] service %s is not found in this cluster", serviceUrl)
+	klog.Errorf("[EdgeMesh] service %s is not found in this cluster", serviceURL)
 	return false, ""
 }
 
@@ -333,7 +332,10 @@ func getFromRealDNS(req []byte, from *net.UDPAddr) {
 
 		if n > 0 {
 			rsp = append(rsp, buf[:n]...)
-			dnsConn.WriteToUDP(rsp, from)
+			if _, err = dnsConn.WriteToUDP(rsp, from); err != nil {
+				klog.Errorf("[EdgeMesh] failed to wirte to udp, err: %v", err)
+				continue
+			}
 			break
 		}
 	}
@@ -394,8 +396,6 @@ func modifyRspPrefix(que *dnsQuestion) (pre []byte) {
 func (h *dnsHeader) convertQueryRsp(isRsp bool) {
 	if isRsp {
 		h.flags |= dnsQR
-	} else {
-		h.flags |= dnsQR
 	}
 }
 
@@ -421,7 +421,7 @@ func (h *dnsHeader) getByteFromDNSHeader() (rspHead []byte) {
 
 	idxTransactionID := unsafe.Sizeof(h.id)
 	idxFlags := unsafe.Sizeof(h.flags) + idxTransactionID
-	idxQDCount := unsafe.Sizeof(h.anCount) + idxFlags
+	idxQDCount := unsafe.Sizeof(h.qdCount) + idxFlags
 	idxANCount := unsafe.Sizeof(h.anCount) + idxQDCount
 	idxNSCount := unsafe.Sizeof(h.nsCount) + idxANCount
 	idxARCount := unsafe.Sizeof(h.arCount) + idxNSCount

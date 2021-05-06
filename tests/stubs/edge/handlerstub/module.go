@@ -17,7 +17,7 @@ limitations under the License.
 package handlerstub
 
 import (
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/core"
 	"github.com/kubeedge/kubeedge/tests/stubs/common/constants"
@@ -67,5 +67,8 @@ func (hs *HandlerStub) Start() {
 		klog.Errorf("New upstream controller failed with error: %v", err)
 		return
 	}
-	upstream.Start()
+	if err := upstream.Start(); err != nil {
+		klog.Errorf("Failed to start upstream with error: %v", err)
+		return
+	}
 }

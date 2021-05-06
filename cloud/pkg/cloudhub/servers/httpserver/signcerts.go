@@ -21,40 +21,49 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
-	"github.com/dgrijalva/jwt-go"
-	"k8s.io/klog"
 	"net"
 	"strings"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	certutil "k8s.io/client-go/util/cert"
+	"k8s.io/klog/v2"
 
 	hubconfig "github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/config"
 )
 
 // SignCerts creates server's certificate and key
-func SignCerts() ([]byte, []byte) {
+func SignCerts() ([]byte, []byte, error) {
 	cfg := &certutil.Config{
 		CommonName:   "KubeEdge",
 		Organization: []string{"KubeEdge"},
 		Usages:       []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		AltNames: certutil.AltNames{
-			IPs: []net.IP{
-				net.ParseIP("127.0.0.1"),
-			},
+			DNSNames: hubconfig.Config.DNSNames,
+			IPs:      getIps(hubconfig.Config.AdvertiseAddress),
 		},
 	}
 
 	certDER, keyDER, err := NewCloudCoreCertDERandKey(cfg)
 	if err != nil {
-		fmt.Printf("%v", err)
+		return nil, nil, err
 	}
 
-	return certDER, keyDER
+	return certDER, keyDER, nil
 }
 
-func GenerateToken() {
-	expiresAt := time.Now().Add(time.Hour * 24).Unix()
+func getIps(advertiseAddress []string) (Ips []net.IP) {
+	for _, addr := range advertiseAddress {
+		Ips = append(Ips, net.ParseIP(addr))
+	}
+	return
+}
+
+// GenerateToken will create a token consisting of caHash and jwt Token and save it to secret
+func GenerateToken() error {
+	// set double TokenRefreshDuration as expirationTime, which can guarantee that the validity period
+	// of the token obtained at anytime is greater than or equal to TokenRefreshDuration
+	expiresAt := time.Now().Add(time.Hour * hubconfig.Config.CloudHub.TokenRefreshDuration * 2).Unix()
 
 	token := jwt.New(jwt.SigningMethodHS256)
 
@@ -66,37 +75,45 @@ func GenerateToken() {
 	tokenString, err := token.SignedString(keyPEM)
 
 	if err != nil {
-		klog.Fatalf("Failed to generate the token for edgecore register, err: %v", err)
+		return fmt.Errorf("Failed to generate the token for EdgeCore register, err: %v", err)
 	}
 
 	caHash := getCaHash()
 	// combine caHash and tokenString into caHashAndToken
-	caHashToken := strings.Join([]string{caHash, tokenString}, " ")
+	caHashToken := strings.Join([]string{caHash, tokenString}, ".")
 	// save caHashAndToken to secret
-	CreateTokenSecret([]byte(caHashToken))
+	err = CreateTokenSecret([]byte(caHashToken))
+	if err != nil {
+		return fmt.Errorf("Failed to create tokenSecret, err: %v", err)
+	}
 
-	t := time.NewTicker(time.Hour * 12)
+	t := time.NewTicker(time.Hour * hubconfig.Config.CloudHub.TokenRefreshDuration)
 	go func() {
 		for {
-			select {
-			case <-t.C:
-				refreshedCaHashToken := refreshToken()
-				CreateTokenSecret([]byte(refreshedCaHashToken))
+			<-t.C
+			refreshedCaHashToken := refreshToken()
+			if err := CreateTokenSecret([]byte(refreshedCaHashToken)); err != nil {
+				klog.Fatalf("failed to create the ca token for edgecore register, err: %v", err)
 			}
 		}
 	}()
+	klog.Info("Succeed to creating token")
+	return nil
 }
 
 func refreshToken() string {
 	claims := &jwt.StandardClaims{}
-	expirationTime := time.Now().Add(time.Hour * 12)
+	expirationTime := time.Now().Add(time.Hour * hubconfig.Config.CloudHub.TokenRefreshDuration * 2)
 	claims.ExpiresAt = expirationTime.Unix()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	keyPEM := getCaKey()
-	tokenString, _ := token.SignedString(keyPEM)
+	tokenString, err := token.SignedString(keyPEM)
+	if err != nil {
+		klog.Errorf("Failed to generate token signed by caKey, err: %v", err)
+	}
 	caHash := getCaHash()
 	//put caHash in token
-	caHashAndToken := strings.Join([]string{caHash, tokenString}, " ")
+	caHashAndToken := strings.Join([]string{caHash, tokenString}, ".")
 	return caHashAndToken
 }
 

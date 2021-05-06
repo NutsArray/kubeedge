@@ -9,12 +9,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
 	beehiveModel "github.com/kubeedge/beehive/pkg/core/model"
+	reliablesyncslisters "github.com/kubeedge/kubeedge/cloud/pkg/client/listers/reliablesyncs/v1alpha1"
 	"github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/common/model"
-	hubconfig "github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/config"
+	"github.com/kubeedge/kubeedge/cloud/pkg/common/modules"
+	"github.com/kubeedge/kubeedge/cloud/pkg/dynamiccontroller/application"
 	edgeconst "github.com/kubeedge/kubeedge/cloud/pkg/edgecontroller/constants"
 	edgemessagelayer "github.com/kubeedge/kubeedge/cloud/pkg/edgecontroller/messagelayer"
 	"github.com/kubeedge/kubeedge/cloud/pkg/synccontroller"
@@ -29,13 +31,15 @@ type ChannelMessageQueue struct {
 	listQueuePool sync.Map
 	listStorePool sync.Map
 
-	ObjectSyncController *hubconfig.ObjectSyncController
+	objectSyncLister        reliablesyncslisters.ObjectSyncLister
+	clusterObjectSyncLister reliablesyncslisters.ClusterObjectSyncLister
 }
 
 // NewChannelMessageQueue initializes a new ChannelMessageQueue
-func NewChannelMessageQueue(objectSyncController *hubconfig.ObjectSyncController) *ChannelMessageQueue {
+func NewChannelMessageQueue(objectSyncLister reliablesyncslisters.ObjectSyncLister, clusterObjectSyncLister reliablesyncslisters.ClusterObjectSyncLister) *ChannelMessageQueue {
 	return &ChannelMessageQueue{
-		ObjectSyncController: objectSyncController,
+		objectSyncLister:        objectSyncLister,
+		clusterObjectSyncLister: clusterObjectSyncLister,
 	}
 }
 
@@ -51,6 +55,7 @@ func (q *ChannelMessageQueue) DispatchMessage() {
 		default:
 		}
 		msg, err := beehiveContext.Receive(model.SrcCloudHub)
+		klog.V(4).Infof("[cloudhub] dispatchMessage to edge: %+v", msg)
 		if err != nil {
 			klog.Info("receive not Message format message")
 			continue
@@ -60,7 +65,6 @@ func (q *ChannelMessageQueue) DispatchMessage() {
 			klog.Warning("node id is not found in the message")
 			continue
 		}
-
 		if isListResource(&msg) {
 			q.addListMessageToQueue(nodeID, &msg)
 		} else {
@@ -70,21 +74,15 @@ func (q *ChannelMessageQueue) DispatchMessage() {
 }
 
 func (q *ChannelMessageQueue) addListMessageToQueue(nodeID string, msg *beehiveModel.Message) {
-	nodeListQueue, err := q.GetNodeListQueue(nodeID)
-	if err != nil {
-		klog.Errorf("fail to get nodeListQueue for Node: %s", nodeID)
-		return
-	}
-
-	nodeListStore, err := q.GetNodeListStore(nodeID)
-	if err != nil {
-		klog.Errorf("fail to get nodeListStore for Node: %s", nodeID)
-		return
-	}
+	nodeListQueue := q.GetNodeListQueue(nodeID)
+	nodeListStore := q.GetNodeListStore(nodeID)
 
 	messageKey, _ := getListMsgKey(msg)
 
-	nodeListStore.Add(msg)
+	if err := nodeListStore.Add(msg); err != nil {
+		klog.Errorf("failed to add msg: %s", err)
+		return
+	}
 	nodeListQueue.Add(messageKey)
 }
 
@@ -93,17 +91,8 @@ func (q *ChannelMessageQueue) addMessageToQueue(nodeID string, msg *beehiveModel
 		return
 	}
 
-	nodeQueue, err := q.GetNodeQueue(nodeID)
-	if err != nil {
-		klog.Errorf("fail to get nodeQueue for Node: %s", nodeID)
-		return
-	}
-
-	nodeStore, err := q.GetNodeStore(nodeID)
-	if err != nil {
-		klog.Errorf("fail to get nodeStore for Node: %s", nodeID)
-		return
-	}
+	nodeQueue := q.GetNodeQueue(nodeID)
+	nodeStore := q.GetNodeStore(nodeID)
 
 	messageKey, err := getMsgKey(msg)
 	if err != nil {
@@ -123,9 +112,8 @@ func (q *ChannelMessageQueue) addMessageToQueue(nodeID string, msg *beehiveModel
 				klog.Errorf("fail to get message UID for message: %s", msg.Header.ID)
 				return
 			}
-
-			objectSync, err := q.ObjectSyncController.ObjectSyncLister.ObjectSyncs(resourceNamespace).Get(synccontroller.BuildObjectSyncName(nodeID, resourceUID))
-			if err == nil && msg.GetResourceVersion() <= objectSync.ResourceVersion {
+			objectSync, err := q.objectSyncLister.ObjectSyncs(resourceNamespace).Get(synccontroller.BuildObjectSyncName(nodeID, resourceUID))
+			if err == nil && objectSync.Status.ObjectResourceVersion != "" && synccontroller.CompareResourceVersion(msg.GetResourceVersion(), objectSync.Status.ObjectResourceVersion) <= 0 {
 				return
 			}
 		}
@@ -133,14 +121,16 @@ func (q *ChannelMessageQueue) addMessageToQueue(nodeID string, msg *beehiveModel
 		// Check if message is older than already in store, if it is, discard it directly
 		if exist {
 			msgInStore := item.(*beehiveModel.Message)
-			if msg.GetResourceVersion() <= msgInStore.GetResourceVersion() ||
-				isDeleteMessage(msgInStore) {
+			if isDeleteMessage(msgInStore) || synccontroller.CompareResourceVersion(msg.GetResourceVersion(), msgInStore.GetResourceVersion()) <= 0 {
 				return
 			}
 		}
 	}
 
-	nodeStore.Add(msg)
+	if err := nodeStore.Add(msg); err != nil {
+		klog.Errorf("fail to add message %v nodeStore, err: %v", msg, err)
+		return
+	}
 	nodeQueue.Add(messageKey)
 }
 
@@ -173,6 +163,9 @@ func isListResource(msg *beehiveModel.Message) bool {
 		return true
 	}
 
+	if msg.Router.Operation == application.ApplicationResp {
+		return true
+	}
 	if msg.GetOperation() == beehiveModel.ResponseOperation {
 		content, ok := msg.Content.(string)
 		if ok && content == "OK" {
@@ -180,11 +173,15 @@ func isListResource(msg *beehiveModel.Message) bool {
 		}
 	}
 
-	if msg.GetSource() == edgeconst.EdgeControllerModuleName {
+	if msg.GetSource() == modules.EdgeControllerModuleName {
 		resourceType, _ := edgemessagelayer.GetResourceType(*msg)
 		if resourceType == beehiveModel.ResourceTypeNode {
 			return true
 		}
+	}
+	// user data
+	if msg.GetGroup() == modules.UserGroup {
+		return true
 	}
 
 	return false
@@ -228,7 +225,7 @@ func (q *ChannelMessageQueue) Connect(info *model.HubInfo) {
 	_, listStoreExit := q.listStorePool.Load(info.NodeID)
 
 	if queueExist && storeExit && listQueueExist && listStoreExit {
-		klog.Infof("edge node %s is already connected", info.NodeID)
+		klog.Infof("Message queue and store for edge node %s are already exist", info.NodeID)
 		return
 	}
 
@@ -277,9 +274,11 @@ func (q *ChannelMessageQueue) Close(info *model.HubInfo) {
 	}
 }
 
-// Publish sends message via the rchannel to Controllers
+// Publish sends message via the channel to Controllers
 func (q *ChannelMessageQueue) Publish(msg *beehiveModel.Message) error {
 	switch msg.Router.Source {
+	case application.MetaServerSource:
+		beehiveContext.Send(modules.DynamicControllerModuleName, *msg)
 	case model.ResTwin:
 		beehiveContext.SendToGroup(model.SrcDeviceController, *msg)
 	default:
@@ -289,59 +288,59 @@ func (q *ChannelMessageQueue) Publish(msg *beehiveModel.Message) error {
 }
 
 // GetNodeQueue returns the queue for given node
-func (q *ChannelMessageQueue) GetNodeQueue(nodeID string) (workqueue.RateLimitingInterface, error) {
+func (q *ChannelMessageQueue) GetNodeQueue(nodeID string) workqueue.RateLimitingInterface {
 	queue, ok := q.queuePool.Load(nodeID)
 	if !ok {
 		klog.Warningf("nodeQueue for edge node %s not found and created now", nodeID)
 		nodeQueue := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), nodeID)
 		q.queuePool.Store(nodeID, nodeQueue)
-		return nodeQueue, nil
+		return nodeQueue
 	}
 
 	nodeQueue := queue.(workqueue.RateLimitingInterface)
-	return nodeQueue, nil
+	return nodeQueue
 }
 
 // GetNodeListQueue returns the listQueue for given node
-func (q *ChannelMessageQueue) GetNodeListQueue(nodeID string) (workqueue.RateLimitingInterface, error) {
+func (q *ChannelMessageQueue) GetNodeListQueue(nodeID string) workqueue.RateLimitingInterface {
 	queue, ok := q.listQueuePool.Load(nodeID)
 	if !ok {
 		klog.Warningf("nodeListQueue for edge node %s not found and created now", nodeID)
 		nodeListQueue := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), nodeID)
 		q.listQueuePool.Store(nodeID, nodeListQueue)
-		return nodeListQueue, nil
+		return nodeListQueue
 	}
 
 	nodeListQueue := queue.(workqueue.RateLimitingInterface)
-	return nodeListQueue, nil
+	return nodeListQueue
 }
 
 // GetNodeStore returns the store for given node
-func (q *ChannelMessageQueue) GetNodeStore(nodeID string) (cache.Store, error) {
+func (q *ChannelMessageQueue) GetNodeStore(nodeID string) cache.Store {
 	store, ok := q.storePool.Load(nodeID)
 	if !ok {
 		klog.Warningf("nodeStore for edge node %s not found and created now", nodeID)
 		nodeStore := cache.NewStore(getMsgKey)
 		q.storePool.Store(nodeID, nodeStore)
-		return nodeStore, nil
+		return nodeStore
 	}
 
 	nodeStore := store.(cache.Store)
-	return nodeStore, nil
+	return nodeStore
 }
 
 // GetNodeListStore returns the listStore for given node
-func (q *ChannelMessageQueue) GetNodeListStore(nodeID string) (cache.Store, error) {
+func (q *ChannelMessageQueue) GetNodeListStore(nodeID string) cache.Store {
 	store, ok := q.listStorePool.Load(nodeID)
 	if !ok {
 		klog.Warningf("nodeListStore for edge node %s not found and created now", nodeID)
 		nodeListStore := cache.NewStore(getListMsgKey)
 		q.listStorePool.Store(nodeID, nodeListStore)
-		return nodeListStore, nil
+		return nodeListStore
 	}
 
 	nodeListStore := store.(cache.Store)
-	return nodeListStore, nil
+	return nodeListStore
 }
 
 // GetMessageUID returns the UID of the object in message

@@ -19,7 +19,6 @@
 # KubeEdge Authors:
 # To Get Detail Version Info for KubeEdge Project
 
-#set -x
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -136,12 +135,12 @@ kubeedge::check::env() {
     errors+="GOPATH environment value not set"
   fi
 
-  # check other env 
+  # check other env
 
-  # check lenth of errors
+  # check length of errors
   if [[ ${#errors[@]} -ne 0 ]] ; then
     local error
-    for error in ${errors[@]}; do
+    for error in "${errors[@]}"; do
       echo "Error: "$error
     done
     exit 1
@@ -177,16 +176,16 @@ kubeedge::golang::get_all_targets() {
   echo ${targets[@]}
 }
 
-kubeedge::golang::get_all_binares() {
-  local -a binares 
+kubeedge::golang::get_all_binaries() {
+  local -a binaries
   for bt in "${ALL_BINARIES_AND_TARGETS[@]}" ; do
-    binares+=("${bt%%:*}")
+    binaries+=("${bt%%:*}")
   done
-  echo ${binares[@]}
+  echo ${binaries[@]}
 }
 
 IFS=" " read -ra KUBEEDGE_ALL_TARGETS <<< "$(kubeedge::golang::get_all_targets)"
-IFS=" " read -ra KUBEEDGE_ALL_BINARIES<<< "$(kubeedge::golang::get_all_binares)"
+IFS=" " read -ra KUBEEDGE_ALL_BINARIES<<< "$(kubeedge::golang::get_all_binaries)"
 
 kubeedge::golang::build_binaries() {
   kubeedge::check::env
@@ -195,23 +194,25 @@ kubeedge::golang::build_binaries() {
   for binArg in "$@"; do
     targets+=("$(kubeedge::golang::get_target_by_binary $binArg)")
   done
-  
+
   if [[ ${#targets[@]} -eq 0 ]]; then
     targets=("${KUBEEDGE_ALL_TARGETS[@]}")
   fi
-    
+
   local -a binaries
   while IFS="" read -r binary; do binaries+=("$binary"); done < <(kubeedge::golang::binaries_from_targets "${targets[@]}")
 
-  local ldflags
-  read -r ldflags <<< "$(kubeedge::version::ldflags)"
+  local goldflags gogcflags
+  # If GOLDFLAGS is unset, then set it to the a default of "-s -w".
+  goldflags="${GOLDFLAGS=-s -w -buildid=} $(kubeedge::version::ldflags)"
+  gogcflags="${GOGCFLAGS:-}"
 
   mkdir -p ${KUBEEDGE_OUTPUT_BINPATH}
   for bin in ${binaries[@]}; do
     echo "building $bin"
     local name="${bin##*/}"
     set -x
-    go build -o ${KUBEEDGE_OUTPUT_BINPATH}/${name} -ldflags "$ldflags" $bin
+    go build -o ${KUBEEDGE_OUTPUT_BINPATH}/${name} -gcflags="${gogcflags:-}" -ldflags "${goldflags:-}" $bin
     set +x
   done
 
@@ -227,11 +228,11 @@ kubeedge::golang::is_cross_build_binary() {
   local key=$1
   for bin in "${KUBEEDGE_ALL_CROSS_BINARIES[@]}" ; do
     if [ "${bin}" == "${key}" ]; then
-      echo ${YES} 
+      echo ${YES}
       return
     fi
   done
-  echo ${NO} 
+  echo ${NO}
 }
 
 KUBEEDGE_ALL_CROSS_GOARMS=(
@@ -243,16 +244,16 @@ kubeedge::golang::is_supported_goarm() {
   local key=$1
   for value in ${KUBEEDGE_ALL_CROSS_GOARMS[@]} ; do
     if [ "${value}" == "${key}" ]; then
-      echo ${YES} 
+      echo ${YES}
       return
     fi
   done
-  echo ${NO} 
+  echo ${NO}
 }
 
 kubeedge::golang::cross_build_place_binaries() {
   kubeedge::check::env
-  
+
   local -a targets=()
   local goarm=${goarm:-${KUBEEDGE_ALL_CROSS_GOARMS[0]}}
 
@@ -274,10 +275,10 @@ kubeedge::golang::cross_build_place_binaries() {
         targets+=("$(kubeedge::golang::get_target_by_binary $bin)")
     done
   fi
-  
+
   if [ "$(kubeedge::golang::is_supported_goarm ${goarm})" == "${NO}" ]; then
     echo "GOARM${goarm} does not support cross build"
-    exit 1 
+    exit 1
   fi
 
   local -a binaries
@@ -311,11 +312,11 @@ kubeedge::golang::is_small_build_binary() {
   local key=$1
   for bin in "${KUBEEDGE_ALL_SMALL_BINARIES[@]}" ; do
     if [ "${bin}" == "${key}" ]; then
-      echo ${YES} 
+      echo ${YES}
       return
     fi
   done
-  echo ${NO} 
+  echo ${NO}
 }
 
 kubeedge::golang::small_build_place_binaries() {
@@ -335,7 +336,7 @@ kubeedge::golang::small_build_place_binaries() {
         targets+=("$(kubeedge::golang::get_target_by_binary $bin)")
     done
   fi
-  
+
   local -a binaries
   while IFS="" read -r binary; do binaries+=("$binary"); done < <(kubeedge::golang::binaries_from_targets "${targets[@]}")
 
@@ -372,8 +373,9 @@ kubeedge::golang::get_cloud_test_dirs() {
 kubeedge::golang::get_keadm_test_dirs() {
     cd ${KUBEEDGE_ROOT}
     findDirs=$(find -L ./keadm \
-	    -name '*_test.go' -print | xargs -0n1 dirname | uniq)
-    echo "${findDirs}"
+	    -name '*_test.go' -print | xargs -n1 dirname | uniq)
+    dirArray=(${findDirs// /})
+    echo "${dirArray[@]}"
 }
 
 kubeedge::golang::get_edge_test_dirs() {
@@ -387,20 +389,31 @@ kubeedge::golang::get_edge_test_dirs() {
   )
 }
 
+kubeedge::golang::get_pkg_test_dirs() {
+    cd ${KUBEEDGE_ROOT}
+    findDirs=$(find -L ./pkg \
+	    -name '*_test.go' -print | xargs -n1 dirname | uniq)
+    dirArray=(${findDirs// /})
+    echo "${dirArray[@]}"
+}
+
 read -ra KUBEEDGE_CLOUD_TESTCASES <<< "$(kubeedge::golang::get_cloud_test_dirs)"
 read -ra KUBEEDGE_EDGE_TESTCASES <<< "$(kubeedge::golang::get_edge_test_dirs)"
 read -ra KUBEEDGE_KEADM_TESTCASES <<< "$(kubeedge::golang::get_keadm_test_dirs)"
+read -ra KUBEEDGE_PKG_TESTCASES <<< "$(kubeedge::golang::get_pkg_test_dirs)"
 
 readonly KUBEEDGE_ALL_TESTCASES=(
   ${KUBEEDGE_CLOUD_TESTCASES[@]}
   ${KUBEEDGE_EDGE_TESTCASES[@]}
   ${KUBEEDGE_KEADM_TESTCASES[@]}
+  ${KUBEEDGE_PKG_TESTCASES[@]}
 )
 
 ALL_COMPONENTS_AND_GETTESTDIRS_FUNCTIONS=(
   cloud::::kubeedge::golang::get_cloud_test_dirs
   edge::::kubeedge::golang::get_edge_test_dirs
   keadm::::kubeedge::golang::get_keadm_test_dirs
+  pkg::::kubeedge::golang::get_pkg_test_dirs
 )
 
 kubeedge::golang::get_testdirs_by_component() {
@@ -432,5 +445,11 @@ kubeedge::golang::run_test() {
     testdirs+=("${KUBEEDGE_ALL_TESTCASES[@]}")
   fi
 
-  go test ${testdirs[@]}
+  local profile=${PROFILE:-""}
+  if [[ $profile ]]; then
+    go test "-coverprofile=${profile}" ${testdirs[@]}
+    go tool cover -func=${profile}
+  else
+    go test ${testdirs[@]}
+  fi
 }

@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satori/go.uuid"
+	"github.com/google/uuid"
 
 	"github.com/kubeedge/kubeedge/edge/pkg/devicetwin/dtclient"
 )
@@ -458,7 +458,7 @@ func TestMsgTwinToDeviceTwin(t *testing.T) {
 
 //TestBuildDeviceState is function to test BuildDeviceState().
 func TestBuildDeviceState(t *testing.T) {
-	baseMessage := BaseMessage{EventID: uuid.NewV4().String(), Timestamp: time.Now().UnixNano() / 1e6}
+	baseMessage := BaseMessage{EventID: uuid.New().String(), Timestamp: time.Now().UnixNano() / 1e6}
 	device := Device{
 		Name:       "SensorTag",
 		State:      "ON",
@@ -501,7 +501,7 @@ func TestBuildDeviceState(t *testing.T) {
 // TestBuildDeviceAttrUpdate is function to test BuildDeviceAttrUpdate().
 func TestBuildDeviceAttrUpdate(t *testing.T) {
 	baseMessage := BaseMessage{
-		EventID:   uuid.NewV4().String(),
+		EventID:   uuid.New().String(),
 		Timestamp: time.Now().UnixNano() / 1e6,
 	}
 	attr := dtclient.DeviceAttr{
@@ -590,8 +590,8 @@ func createDevice() []*Device {
 // createMembershipGetResult is function to create MembershipGetResult with given base message.
 func createMembershipGetResult(message BaseMessage) MembershipGetResult {
 	attrs := createMessageAttribute()
-	devices := []*Device{}
-	device := &Device{
+	var devices []Device
+	device := Device{
 		ID:          "id1",
 		Name:        "SensorTag",
 		Description: "Sensor",
@@ -600,23 +600,14 @@ func createMembershipGetResult(message BaseMessage) MembershipGetResult {
 		Attributes:  attrs,
 	}
 	devices = append(devices, device)
-	wantDevice := []Device{}
-	wantDev := Device{
-		ID:          device.ID,
-		Name:        device.Name,
-		Description: device.Description,
-		State:       device.State,
-		LastOnline:  device.LastOnline,
-		Attributes:  device.Attributes,
-	}
-	wantDevice = append(wantDevice, wantDev)
-	memGetResult := MembershipGetResult{BaseMessage: message, Devices: wantDevice}
+
+	memGetResult := MembershipGetResult{BaseMessage: message, Devices: devices}
 	return memGetResult
 }
 
 // TestBuildMembershipGetResult is function to test BuildMembershipGetResult().
 func TestBuildMembershipGetResult(t *testing.T) {
-	baseMessage := BaseMessage{EventID: uuid.NewV4().String(), Timestamp: time.Now().UnixNano() / 1e6}
+	baseMessage := BaseMessage{EventID: uuid.New().String(), Timestamp: time.Now().UnixNano() / 1e6}
 	devices := createDevice()
 	memGetResult := createMembershipGetResult(baseMessage)
 	bytesMemGetResult, _ := json.Marshal(memGetResult)
@@ -698,7 +689,7 @@ func createDeviceTwinResult(baseMessage BaseMessage) DeviceTwinResult {
 
 // TestBuildDeviceTwinResult is function to test BuildDeviceTwinResult().
 func TestBuildDeviceTwinResult(t *testing.T) {
-	baseMessage := BaseMessage{EventID: uuid.NewV4().String(), Timestamp: time.Now().UnixNano() / 1e6}
+	baseMessage := BaseMessage{EventID: uuid.New().String(), Timestamp: time.Now().UnixNano() / 1e6}
 	msgTwins := createMessageTwin()
 	devTwinResultDealType0 := createDeviceTwinResultDealTypeGet(baseMessage)
 	bytesDealType0, _ := json.Marshal(devTwinResultDealType0)

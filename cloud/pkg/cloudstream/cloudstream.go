@@ -18,13 +18,10 @@ package cloudstream
 
 import (
 	"github.com/kubeedge/beehive/pkg/core"
+	"github.com/kubeedge/kubeedge/cloud/pkg/cloudhub"
 	"github.com/kubeedge/kubeedge/cloud/pkg/cloudstream/config"
+	"github.com/kubeedge/kubeedge/cloud/pkg/common/modules"
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/cloudcore/v1alpha1"
-)
-
-const (
-	CloudStreamModuleName = "cloudStream"
-	CloudStreamGroupName  = "cloudStream"
 )
 
 type cloudStream struct {
@@ -43,21 +40,26 @@ func Register(controller *v1alpha1.CloudStream) {
 }
 
 func (s *cloudStream) Name() string {
-	return CloudStreamModuleName
+	return modules.CloudStreamModuleName
 }
 
 func (s *cloudStream) Group() string {
-	return CloudStreamGroupName
+	return modules.CloudStreamGroupName
 }
 
 func (s *cloudStream) Start() {
-	ts := newTunnelServer()
-	// start new tunnel server
-	go ts.Start()
+	// TODO: Will improve in the future
+	ok := <-cloudhub.DoneTLSTunnelCerts
+	if ok {
+		ts := newTunnelServer()
 
-	server := newStreamServer(ts)
-	// start stream server to accepet kube-apiserver connection
-	go server.Start()
+		// start new tunnel server
+		go ts.Start()
+
+		server := newStreamServer(ts)
+		// start stream server to accept kube-apiserver connection
+		go server.Start()
+	}
 }
 
 func (s *cloudStream) Enable() bool {

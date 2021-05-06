@@ -23,19 +23,15 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/core"
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
+	"github.com/kubeedge/kubeedge/edge/pkg/common/modules"
+	"github.com/kubeedge/kubeedge/edge/pkg/edgehub"
 	"github.com/kubeedge/kubeedge/edge/pkg/edgestream/config"
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/edgecore/v1alpha1"
 	"github.com/kubeedge/kubeedge/pkg/stream"
-)
-
-//define edgestream module name
-const (
-	ModuleNameEdgeStream = "edgestream"
-	GroupNameEdgeStream  = "edgestream"
 )
 
 type edgestream struct {
@@ -59,11 +55,11 @@ func Register(s *v1alpha1.EdgeStream, hostnameOverride, nodeIP string) {
 }
 
 func (e *edgestream) Name() string {
-	return ModuleNameEdgeStream
+	return modules.EdgeStreamModuleName
 }
 
 func (e *edgestream) Group() string {
-	return GroupNameEdgeStream
+	return modules.StreamGroup
 }
 
 func (e *edgestream) Enable() bool {
@@ -71,32 +67,33 @@ func (e *edgestream) Enable() bool {
 }
 
 func (e *edgestream) Start() {
-
 	serverURL := url.URL{
 		Scheme: "wss",
 		Host:   config.Config.TunnelServer,
 		Path:   "/v1/kubeedge/connect",
 	}
-
-	cert, err := tls.LoadX509KeyPair(config.Config.TLSTunnelCertFile, config.Config.TLSTunnelPrivateKeyFile)
-	if err != nil {
-		klog.Fatalf("Failed to load x509 key pair: %v", err)
-	}
-
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-		Certificates:       []tls.Certificate{cert},
-	}
-
-	for range time.NewTicker(time.Second * 2).C {
-		select {
-		case <-beehiveContext.Done():
-			return
-		default:
-		}
-		err := e.TLSClientConnect(serverURL, tlsConfig)
+	// TODO: Will improve in the future
+	ok := <-edgehub.HasTLSTunnelCerts
+	if ok {
+		cert, err := tls.LoadX509KeyPair(config.Config.TLSTunnelCertFile, config.Config.TLSTunnelPrivateKeyFile)
 		if err != nil {
-			klog.Errorf("TLSClientConnect error %v", err)
+			klog.Fatalf("Failed to load x509 key pair: %v", err)
+		}
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{cert},
+		}
+
+		for range time.NewTicker(time.Second * 2).C {
+			select {
+			case <-beehiveContext.Done():
+				return
+			default:
+			}
+			err := e.TLSClientConnect(serverURL, tlsConfig)
+			if err != nil {
+				klog.Errorf("TLSClientConnect error %v", err)
+			}
 		}
 	}
 }
@@ -109,8 +106,11 @@ func (e *edgestream) TLSClientConnect(url url.URL, tlsConfig *tls.Config) error 
 		HandshakeTimeout: time.Duration(config.Config.HandshakeTimeout) * time.Second,
 	}
 	header := http.Header{}
-	header.Add(stream.SessionKeyHostNameOveride, e.hostnameOveride)
+	header.Add(stream.SessionKeyHostNameOverride, e.hostnameOveride)
 	header.Add(stream.SessionKeyInternalIP, e.nodeIP)
+
+	// TODO: Fix SessionHostNameOverride typo, remove this in v1.7.x
+	header.Add(stream.SessionKeyHostNameOverrideOld, e.hostnameOveride)
 
 	con, _, err := dial.Dial(url.String(), header)
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/beehive/pkg/core/model"
 )
@@ -57,7 +57,7 @@ func (ctx *ChannelContext) Cleanup(module string) {
 
 // Send send msg to a module. Todo: do not stuck
 func (ctx *ChannelContext) Send(module string, message model.Message) {
-	// avoid exception because of channel colsing
+	// avoid exception because of channel closing
 	// TODO: need reconstruction
 	defer func() {
 		if exception := recover(); exception != nil {
@@ -89,7 +89,7 @@ func getAnonChannelName(msgID string) string {
 
 // SendSync sends message in a sync way
 func (ctx *ChannelContext) SendSync(module string, message model.Message, timeout time.Duration) (model.Message, error) {
-	// avoid exception because of channel colsing
+	// avoid exception because of channel closing
 	// TODO: need reconstruction
 	defer func() {
 		if exception := recover(); exception != nil {
@@ -155,27 +155,24 @@ func (ctx *ChannelContext) SendResp(message model.Message) {
 		return
 	}
 
-	klog.Warningf("Get bad anonName:%s when sendresp message, do nothing", anonName)
+	klog.V(4).Infof("Get bad anonName:%s when sendresp message, do nothing", anonName)
 }
 
 // SendToGroup send msg to modules. Todo: do not stuck
 func (ctx *ChannelContext) SendToGroup(moduleType string, message model.Message) {
-	// avoid exception because of channel colsing
-	// TODO: need reconstruction
-	defer func() {
-		if exception := recover(); exception != nil {
-			klog.Warningf("Recover when sendToGroup message, exception: %+v", exception)
-		}
-	}()
-
 	send := func(ch chan model.Message) {
+		// avoid exception because of channel closing
+		// TODO: need reconstruction
+		defer func() {
+			if exception := recover(); exception != nil {
+				klog.Warningf("Recover when sendToGroup message, exception: %+v", exception)
+			}
+		}()
 		select {
 		case ch <- message:
 		default:
 			klog.Warningf("the message channel is full, message: %+v", message)
-			select {
-			case ch <- message:
-			}
+			ch <- message
 		}
 	}
 	if channelList := ctx.getTypeChannel(moduleType); channelList != nil {
@@ -190,14 +187,6 @@ func (ctx *ChannelContext) SendToGroup(moduleType string, message model.Message)
 // SendToGroupSync : broadcast the message to echo module channel, the module send response back anon channel
 // check timeout and the size of anon channel
 func (ctx *ChannelContext) SendToGroupSync(moduleType string, message model.Message, timeout time.Duration) error {
-	// avoid exception because of channel colsing
-	// TODO: need reconstruction
-	defer func() {
-		if exception := recover(); exception != nil {
-			klog.Warningf("Recover when sendToGroupsync message, exception: %+v", exception)
-		}
-	}()
-
 	if timeout <= 0 {
 		timeout = MessageTimeoutDefault
 	}
@@ -242,6 +231,13 @@ func (ctx *ChannelContext) SendToGroupSync(moduleType string, message model.Mess
 
 	var timeoutCounter int32
 	send := func(ch chan model.Message) {
+		// avoid exception because of channel closing
+		// TODO: need reconstruction
+		defer func() {
+			if exception := recover(); exception != nil {
+				klog.Warningf("Recover when sendToGroupsync message, exception: %+v", exception)
+			}
+		}()
 		sendTimer := time.NewTimer(time.Until(deadline))
 		select {
 		case ch <- message:
@@ -308,13 +304,12 @@ func (ctx *ChannelContext) addChannel(module string, moduleCh chan model.Message
 func (ctx *ChannelContext) delChannel(module string) {
 	// delete module channel from channels map
 	ctx.chsLock.Lock()
-	_, exist := ctx.channels[module]
-	if !exist {
+	if _, exist := ctx.channels[module]; !exist {
+		ctx.chsLock.Unlock()
 		klog.Warningf("Failed to get channel, module:%s", module)
 		return
 	}
 	delete(ctx.channels, module)
-
 	ctx.chsLock.Unlock()
 
 	// delete module channel from typechannels map

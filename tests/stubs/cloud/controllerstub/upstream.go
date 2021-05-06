@@ -19,7 +19,7 @@ package controllerstub
 import (
 	"encoding/json"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	beehiveContext "github.com/kubeedge/beehive/pkg/core/context"
 	"github.com/kubeedge/beehive/pkg/core/model"
@@ -60,7 +60,6 @@ func (uc *UpstreamController) WaitforMessage() {
 			klog.Infof("Stop waiting for message")
 			return
 		default:
-
 		}
 		// Receive message from cloudhub
 		msg, err := beehiveContext.Receive(constants.ControllerStub)

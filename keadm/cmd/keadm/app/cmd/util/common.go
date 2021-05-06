@@ -17,74 +17,74 @@ limitations under the License.
 package util
 
 import (
-	"bytes"
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 
+	"github.com/blang/semver"
 	"github.com/spf13/pflag"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog/v2"
 
 	types "github.com/kubeedge/kubeedge/keadm/cmd/keadm/app/cmd/common"
+	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/edgecore/v1alpha1"
 )
 
-//Constants used by installers
+// Constants used by installers
 const (
-	UbuntuOSType = "ubuntu"
-	CentOSType   = "centos"
+	KubeEdgeDownloadURL  = "https://github.com/kubeedge/kubeedge/releases/download"
+	EdgeServiceFile      = "edgecore.service"
+	CloudServiceFile     = "cloudcore.service"
+	ServiceFileURLFormat = "https://raw.githubusercontent.com/kubeedge/kubeedge/release-%s/build/tools/%s"
+	KubeEdgePath         = "/etc/kubeedge/"
+	KubeEdgeUsrBinPath   = "/usr/local/bin"
+	KubeEdgeBinaryName   = "edgecore"
 
-	KubeEdgeDownloadURL       = "https://github.com/kubeedge/kubeedge/releases/download"
-	KubeEdgePath              = "/etc/kubeedge/"
-	KubeEdgeUsrBinPath        = "/usr/local/bin"
-	KubeEdgeConfPath          = KubeEdgePath + "kubeedge/edge/conf"
-	KubeEdgeBinaryName        = "edgecore"
-	KubeEdgeDefaultCertPath   = KubeEdgePath + "certs/"
-	KubeEdgeConfigEdgeYaml    = KubeEdgeConfPath + "/edge.yaml"
-	KubeEdgeConfigNodeJSON    = KubeEdgeConfPath + "/node.json"
-	KubeEdgeConfigModulesYaml = KubeEdgeConfPath + "/modules.yaml"
+	KubeCloudBinaryName = "cloudcore"
 
-	KubeEdgeCloudCertGenPath     = KubeEdgePath + "certgen.sh"
-	KubeEdgeEdgeCertsTarFileName = "certs.tgz"
-	KubeEdgeEdgeCertsTarFilePath = KubeEdgePath + "certs.tgz"
-	KubeEdgeCloudConfPath        = KubeEdgePath + "kubeedge/cloud/conf"
-	KubeEdgeCloudCoreYaml        = KubeEdgeCloudConfPath + "/controller.yaml"
-	KubeEdgeCloudCoreModulesYaml = KubeEdgeCloudConfPath + "/modules.yaml"
-	KubeCloudBinaryName          = "cloudcore"
-
-	KubeEdgeNewConfigDir     = KubeEdgePath + "config/"
-	KubeEdgeCloudCoreNewYaml = KubeEdgeNewConfigDir + "cloudcore.yaml"
-	KubeEdgeEdgeCoreNewYaml  = KubeEdgeNewConfigDir + "edgecore.yaml"
+	KubeEdgeConfigDir        = KubeEdgePath + "config/"
+	KubeEdgeCloudCoreNewYaml = KubeEdgeConfigDir + "cloudcore.yaml"
+	KubeEdgeEdgeCoreNewYaml  = KubeEdgeConfigDir + "edgecore.yaml"
 
 	KubeEdgeLogPath = "/var/log/kubeedge/"
 	KubeEdgeCrdPath = KubeEdgePath + "crds"
 
-	KubeEdgeCRDDownloadURL = "https://raw.githubusercontent.com/kubeedge/kubeedge/master/build/crds"
+	KubeEdgeSocketPath = "/var/lib/kubeedge/"
 
-	InterfaceName = "eth0"
+	EdgeRootDir = "/var/lib/edged"
 
-	latestReleaseVersionURL = "https://api.github.com/repos/kubeedge/kubeedge/releases/latest"
+	SystemdBootPath = "/run/systemd/system"
+
+	KubeEdgeCRDDownloadURL = "https://raw.githubusercontent.com/kubeedge/kubeedge/release-%s/build/crds"
+
+	latestReleaseVersionURL = "https://kubeedge.io/latestversion"
 	RetryTimes              = 5
+
+	OSArchAMD64 string = "amd64"
+	OSArchARM64 string = "arm64"
+	OSArchARM32 string = "arm"
+
+	APT    string = "apt"
+	YUM    string = "yum"
+	PACMAN string = "pacman"
 )
 
-type latestReleaseVersion struct {
-	TagName string `json:"tag_name"`
-}
-
-//AddToolVals gets the value and default values of each flags and collects them in temporary cache
+// AddToolVals gets the value and default values of each flags and collects them in temporary cache
 func AddToolVals(f *pflag.Flag, flagData map[string]types.FlagData) {
 	flagData[f.Name] = types.FlagData{Val: f.Value.String(), DefVal: f.DefValue}
 }
 
-//CheckIfAvailable checks is val of a flag is empty then return the default value
+// CheckIfAvailable checks is val of a flag is empty then return the default value
 func CheckIfAvailable(val, defval string) string {
 	if val == "" {
 		return defval
@@ -92,130 +92,72 @@ func CheckIfAvailable(val, defval string) string {
 	return val
 }
 
-//Common struct contains OS and Tool version properties and also embeds OS interface
+// Common struct contains OS and Tool version properties and also embeds OS interface
 type Common struct {
 	types.OSTypeInstaller
 	OSVersion   string
-	ToolVersion string
+	ToolVersion semver.Version
 	KubeConfig  string
 	Master      string
 }
 
-//SetOSInterface defines a method to set the implemtation of the OS interface
+// SetOSInterface defines a method to set the implemtation of the OS interface
 func (co *Common) SetOSInterface(intf types.OSTypeInstaller) {
 	co.OSTypeInstaller = intf
 }
 
-//Command defines commands to be executed and captures std out and std error
-type Command struct {
-	Cmd    *exec.Cmd
-	StdOut []byte
-	StdErr []byte
-}
-
-//ExecuteCommand executes the command and captures the output in stdOut
-func (cm *Command) ExecuteCommand() {
-	var err error
-	cm.StdOut, err = cm.Cmd.Output()
+// GetPackageManager get package manager of OS
+func GetPackageManager() string {
+	cmd := NewCommand("command -v apt || command -v yum || command -v pacman")
+	err := cmd.Exec()
 	if err != nil {
-		fmt.Println("Output failed: ", err)
-		cm.StdErr = []byte(err.Error())
+		fmt.Println(err)
+		return ""
+	}
+
+	if strings.HasSuffix(cmd.GetStdOut(), APT) {
+		return APT
+	} else if strings.HasSuffix(cmd.GetStdOut(), YUM) {
+		return YUM
+	} else if strings.HasSuffix(cmd.GetStdOut(), PACMAN) {
+		return PACMAN
+	} else {
+		return ""
 	}
 }
 
-//GetStdOutput gets StdOut field
-func (cm Command) GetStdOutput() string {
-	if len(cm.StdOut) != 0 {
-		return strings.TrimRight(string(cm.StdOut), "\n")
-	}
-	return ""
-}
-
-//GetStdErr gets StdErr field
-func (cm Command) GetStdErr() string {
-	if len(cm.StdErr) != 0 {
-		return strings.TrimRight(string(cm.StdErr), "\n")
-	}
-	return ""
-}
-
-//ExecuteCmdShowOutput captures both StdOut and StdErr after exec.cmd().
-//It helps in the commands where it takes some time for execution.
-func (cm Command) ExecuteCmdShowOutput() error {
-	var stdoutBuf, stderrBuf bytes.Buffer
-	stdoutIn, _ := cm.Cmd.StdoutPipe()
-	stderrIn, _ := cm.Cmd.StderrPipe()
-
-	var errStdout, errStderr error
-	stdout := io.MultiWriter(os.Stdout, &stdoutBuf)
-	stderr := io.MultiWriter(os.Stderr, &stderrBuf)
-	err := cm.Cmd.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start '%s' because of error : %s", strings.Join(cm.Cmd.Args, " "), err.Error())
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		_, errStdout = io.Copy(stdout, stdoutIn)
-		wg.Done()
-	}()
-
-	_, errStderr = io.Copy(stderr, stderrIn)
-	wg.Wait()
-
-	err = cm.Cmd.Wait()
-	if err != nil {
-		return fmt.Errorf("failed to run '%s' because of error : %s", strings.Join(cm.Cmd.Args, " "), err.Error())
-	}
-	if errStdout != nil || errStderr != nil {
-		return fmt.Errorf("failed to capture stdout or stderr")
-	}
-
-	cm.StdOut, cm.StdErr = stdoutBuf.Bytes(), stderrBuf.Bytes()
-	return nil
-}
-
-//GetOSVersion gets the OS name
-func GetOSVersion() string {
-	c := &Command{Cmd: exec.Command("sh", "-c", ". /etc/os-release && echo $ID")}
-	c.ExecuteCommand()
-	return c.GetStdOutput()
-}
-
-//GetOSInterface helps in returning OS specific object which implements OSTypeInstaller interface.
+// GetOSInterface helps in returning OS specific object which implements OSTypeInstaller interface.
 func GetOSInterface() types.OSTypeInstaller {
-	switch GetOSVersion() {
-	case UbuntuOSType:
-		return &UbuntuOS{}
-	case CentOSType:
-		return &CentOS{}
+	switch GetPackageManager() {
+	case APT:
+		return &DebOS{}
+	case YUM:
+		return &RpmOS{}
+	case PACMAN:
+		return &PacmanOS{}
 	default:
-		panic("This OS version is currently un-supported by keadm")
+		fmt.Println("Failed to detect supported package manager command(apt, yum, pacman), exit")
+		panic("Failed to detect supported package manager command(apt, yum, pacman), exit")
 	}
 }
 
-// IsCloudCore identifies if the node is having cloudcore already running.
-// If so, then return true, else it can used as edge node and initialise it.
-func IsCloudCore() (types.ModuleRunning, error) {
+// RunningModule identifies cloudcore/edgecore running or not.
+func RunningModule() (types.ModuleRunning, error) {
 	osType := GetOSInterface()
 	cloudCoreRunning, err := osType.IsKubeEdgeProcessRunning(KubeCloudBinaryName)
-	if err != nil {
-		return types.NoneRunning, err
-	}
 
 	if cloudCoreRunning {
 		return types.KubeEdgeCloudRunning, nil
-	}
-
-	edgeCoreRunning, err := osType.IsKubeEdgeProcessRunning(KubeEdgeBinaryName)
-	if err != nil {
+	} else if err != nil {
 		return types.NoneRunning, err
 	}
 
-	if false != edgeCoreRunning {
+	edgeCoreRunning, err := osType.IsKubeEdgeProcessRunning(KubeEdgeBinaryName)
+
+	if edgeCoreRunning {
 		return types.KubeEdgeEdgeRunning, nil
+	} else if err != nil {
+		return types.NoneRunning, err
 	}
 
 	return types.NoneRunning, nil
@@ -231,41 +173,7 @@ func GetLatestVersion() (string, error) {
 		return "", err
 	}
 
-	latestRelease := &latestReleaseVersion{}
-	err = json.Unmarshal(latestReleaseData, latestRelease)
-	if err != nil {
-		return "", err
-	}
-
-	return latestRelease.TagName, nil
-}
-
-// runCommandWithShell executes the given command with "sh -c".
-// It returns an error if the command outputs anything on the stderr.
-func runCommandWithShell(command string) (string, error) {
-	cmd := &Command{Cmd: exec.Command("sh", "-c", command)}
-	err := cmd.ExecuteCmdShowOutput()
-	if err != nil {
-		return "", err
-	}
-	errout := cmd.GetStdErr()
-	if errout != "" {
-		return "", fmt.Errorf("failed to run command(%s), err:%s", command, errout)
-	}
-	return cmd.GetStdOutput(), nil
-}
-
-// runCommandWithStdout executes the given command with "sh -c".
-// It returns the stdout and an error if the command outputs anything on the stderr.
-func runCommandWithStdout(command string) (string, error) {
-	cmd := &Command{Cmd: exec.Command("sh", "-c", command)}
-	cmd.ExecuteCommand()
-
-	if errout := cmd.GetStdErr(); errout != "" {
-		return "", fmt.Errorf("failed to run command(%s), err:%s", command, errout)
-	}
-
-	return cmd.GetStdOutput(), nil
+	return string(latestReleaseData), nil
 }
 
 // build Config from flags
@@ -314,144 +222,133 @@ func checkKubernetesVersion(serverVersion *version.Info) error {
 	return fmt.Errorf("Your minor version of K8s is lower than %d, please reinstall newer version", types.DefaultK8SMinimumVersion)
 }
 
-//installKubeEdge downloads the provided version of KubeEdge.
-//Untar's in the specified location /etc/kubeedge/ and then copies
-//the binary to excecutables' path (eg: /usr/local/bin)
-func installKubeEdge(componentType types.ComponentType, arch string, version string) error {
+// installKubeEdge downloads the provided version of KubeEdge.
+// Untar's in the specified location /etc/kubeedge/ and then copies
+// the binary to excecutables' path (eg: /usr/local/bin)
+func installKubeEdge(options types.InstallOptions, arch string, version semver.Version) error {
+	// create the storage path of the kubeedge installation packages
+	if options.TarballPath == "" {
+		options.TarballPath = KubeEdgePath
+	} else {
+		err := os.MkdirAll(options.TarballPath, os.ModePerm)
+		if err != nil {
+			return fmt.Errorf("not able to create %s folder path", options.TarballPath)
+		}
+	}
 
 	err := os.MkdirAll(KubeEdgePath, os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("not able to create %s folder path", KubeEdgePath)
 	}
 
-	//Check if the same version exists, then skip the download and just untar and continue
-	//TODO: It is always better to have the checksum validation of the downloaded file
-	//and checksum available at download URL. So that both can be compared to see if
+	if arch == "armhf" {
+		arch = "arm"
+	}
+
+	//Check if the same version exists, then skip the download and just checksum for it
+	//and if checksum failed, there will be a option to choose to continue to untar or quit.
+	//checksum available at download URL. So that both can be compared to see if
 	//proper download has happened and then only proceed further.
 	//Currently it is missing and once checksum is in place, checksum check required
 	//to be added here.
 	dirname := fmt.Sprintf("kubeedge-v%s-linux-%s", version, arch)
 	filename := fmt.Sprintf("kubeedge-v%s-linux-%s.tar.gz", version, arch)
 	checksumFilename := fmt.Sprintf("checksum_kubeedge-v%s-linux-%s.tar.gz.txt", version, arch)
-	filePath := fmt.Sprintf("%s%s", KubeEdgePath, filename)
+	filePath := fmt.Sprintf("%s/%s", options.TarballPath, filename)
 	if _, err = os.Stat(filePath); err == nil {
-		fmt.Println("Expected or Default KubeEdge version", version, "is already downloaded")
+		fmt.Printf("Expected or Default KubeEdge version %v is already downloaded and will checksum for it. \n", version)
+		if success, _ := checkSum(filename, checksumFilename, version, options.TarballPath); !success {
+			fmt.Printf("%v in your path checksum failed and do you want to delete this file and try to download again? \n", filename)
+			for {
+				confirm, err := askForconfirm()
+				if err != nil {
+					fmt.Println(err.Error())
+					continue
+				}
+				if confirm {
+					cmdStr := fmt.Sprintf("cd %s && rm -f %s", options.TarballPath, filename)
+					if err := NewCommand(cmdStr).Exec(); err != nil {
+						return err
+					}
+					klog.Infof("%v have been deleted and will try to download again", filename)
+					if err := retryDownload(filename, checksumFilename, version, options.TarballPath); err != nil {
+						return err
+					}
+				} else {
+					klog.Warningf("failed to checksum and will continue to install.")
+				}
+				break
+			}
+		} else {
+			fmt.Println("Expected or Default KubeEdge version", version, "is already downloaded")
+		}
 	} else if !os.IsNotExist(err) {
 		return err
 	} else {
-		try := 0
-		for ; try < downloadRetryTimes; try++ {
-			//Download the tar from repo
-			dwnldURL := fmt.Sprintf("cd %s && wget -k --no-check-certificate --progress=bar:force %s/v%s/%s",
-				KubeEdgePath, KubeEdgeDownloadURL, version, filename)
-			if _, err := runCommandWithShell(dwnldURL); err != nil {
-				return err
-			}
-
-			//Verify the tar with checksum
-			fmt.Printf("%s checksum: \n", filename)
-			cmdStr := fmt.Sprintf("cd %s && sha512sum %s | awk '{split($0,a,\"[ ]\"); print a[1]}'", KubeEdgePath, filename)
-			desiredChecksum, err := runCommandWithStdout(cmdStr)
-			if err != nil {
-				return err
-			}
-
-			fmt.Printf("%s content: \n", checksumFilename)
-			cmdStr = fmt.Sprintf("wget -qO- %s/v%s/%s", KubeEdgeDownloadURL, version, checksumFilename)
-			actualChecksum, err := runCommandWithStdout(cmdStr)
-			if err != nil {
-				return err
-			}
-
-			if desiredChecksum == actualChecksum {
-				break
-			} else {
-				fmt.Printf("Failed to verify the checksum of %s, try to download it again ... \n\n", filename)
-				//Cleanup the downloaded files
-				cmdStr = fmt.Sprintf("cd %s && rm -f %s", KubeEdgePath, filename)
-				_, err := runCommandWithStdout(cmdStr)
-				if err != nil {
-					return err
-				}
-			}
-		}
-		if try == downloadRetryTimes {
-			return fmt.Errorf("failed to download %s", filename)
+		if err := retryDownload(filename, checksumFilename, version, options.TarballPath); err != nil {
+			return err
 		}
 	}
 
-	// Compatible with 1.0.0
+	if err := downloadServiceFile(options.ComponentType, version, KubeEdgePath); err != nil {
+		return fmt.Errorf("fail to download service file,error:{%s}", err.Error())
+	}
+
 	var untarFileAndMoveCloudCore, untarFileAndMoveEdgeCore string
-	if version >= "1.1.0" {
-		if componentType == types.CloudCore {
-			untarFileAndMoveCloudCore = fmt.Sprintf("cd %s && tar -C %s -xvzf %s && cp %s/%s/cloud/cloudcore/%s %s/",
-				KubeEdgePath, KubeEdgePath, filename, KubeEdgePath, dirname, KubeCloudBinaryName, KubeEdgeUsrBinPath)
+
+	if options.ComponentType == types.CloudCore {
+		untarFileAndMoveCloudCore = fmt.Sprintf("cd %s && tar -C %s -xvzf %s && cp %s/%s/cloud/cloudcore/%s %s/",
+			options.TarballPath, options.TarballPath, filename, options.TarballPath, dirname, KubeCloudBinaryName, KubeEdgeUsrBinPath)
+
+		cmd := NewCommand(untarFileAndMoveCloudCore)
+		if err := cmd.Exec(); err != nil {
+			return err
 		}
-		if componentType == types.EdgeCore {
-			untarFileAndMoveEdgeCore = fmt.Sprintf("cd %s && tar -C %s -xvzf %s && cp %s%s/edge/%s %s/",
-				KubeEdgePath, KubeEdgePath, filename, KubeEdgePath, dirname, KubeEdgeBinaryName, KubeEdgeUsrBinPath)
+		fmt.Println(cmd.GetStdOut())
+	} else if options.ComponentType == types.EdgeCore {
+		untarFileAndMoveEdgeCore = fmt.Sprintf("cd %s && tar -C %s -xvzf %s && cp %s/%s/edge/%s %s/",
+			options.TarballPath, options.TarballPath, filename, options.TarballPath, dirname, KubeEdgeBinaryName, KubeEdgeUsrBinPath)
+		cmd := NewCommand(untarFileAndMoveEdgeCore)
+		if err := cmd.Exec(); err != nil {
+			return err
 		}
-	} else {
-		untarFileAndMoveEdgeCore = fmt.Sprintf("cd %s && tar -C %s -xvzf %s && cp %skubeedge/edge/%s %s/.",
-			KubeEdgePath, KubeEdgePath, filename, KubeEdgePath, KubeEdgeBinaryName, KubeEdgeUsrBinPath)
-		untarFileAndMoveEdgeCore = fmt.Sprintf("cd %s && cp %skubeedge/cloud/%s %s/.",
-			KubeEdgePath, KubeEdgePath, KubeCloudBinaryName, KubeEdgeUsrBinPath)
+		fmt.Println(cmd.GetStdOut())
 	}
 
-	if componentType == types.CloudCore {
-		stdout, err := runCommandWithStdout(untarFileAndMoveCloudCore)
-		if err != nil {
-			return err
-		}
-		fmt.Println(stdout)
-	}
-	if componentType == types.EdgeCore {
-		stdout, err := runCommandWithStdout(untarFileAndMoveEdgeCore)
-		if err != nil {
-			return err
-		}
-		fmt.Println(stdout)
-	}
 	return nil
 }
 
-//runEdgeCore sets the environment variable GOARCHAIUS_CONFIG_PATH for the configuration path
-//and the starts edgecore with logs being captured
-func runEdgeCore(version string) error {
+// runEdgeCore starts edgecore with logs being captured
+func runEdgeCore(version semver.Version) error {
 	// create the log dir for kubeedge
 	err := os.MkdirAll(KubeEdgeLogPath, os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("not able to create %s folder path", KubeEdgeLogPath)
 	}
 
-	// add +x for edgecore
-	command := fmt.Sprintf("chmod +x %s/%s", KubeEdgeUsrBinPath, KubeEdgeBinaryName)
-	if _, err := runCommandWithStdout(command); err != nil {
+	var binExec string
+
+	systemdExist := hasSystemd()
+
+	edgecoreServiceName := "edgecore"
+
+	if systemdExist {
+		binExec = fmt.Sprintf("sudo ln /etc/kubeedge/%s.service /etc/systemd/system/%s.service && sudo systemctl daemon-reload && sudo systemctl enable %s && sudo systemctl start %s", edgecoreServiceName, edgecoreServiceName, edgecoreServiceName, edgecoreServiceName)
+	} else {
+		binExec = fmt.Sprintf("%s/%s > %skubeedge/edge/%s.log 2>&1 &", KubeEdgeUsrBinPath, KubeEdgeBinaryName, KubeEdgePath, KubeEdgeBinaryName)
+	}
+
+	cmd := NewCommand(binExec)
+	if err := cmd.Exec(); err != nil {
 		return err
 	}
 
-	var binExec string
-	if version >= "1.1.0" {
-		binExec = fmt.Sprintf("%s > %s/%s.log 2>&1 &", KubeEdgeBinaryName, KubeEdgeLogPath, KubeEdgeBinaryName)
+	fmt.Println(cmd.GetStdOut())
+
+	if systemdExist {
+		fmt.Printf("KubeEdge edgecore is running, For logs visit: journalctl -u %s.service -b\n", edgecoreServiceName)
 	} else {
-		binExec = fmt.Sprintf("%s > %skubeedge/edge/%s.log 2>&1 &", KubeEdgeBinaryName, KubeEdgePath, KubeEdgeBinaryName)
-	}
-
-	cmd := &Command{Cmd: exec.Command("sh", "-c", binExec)}
-	cmd.Cmd.Env = os.Environ()
-	env := fmt.Sprintf("GOARCHAIUS_CONFIG_PATH=%skubeedge/edge", KubeEdgePath)
-	cmd.Cmd.Env = append(cmd.Cmd.Env, env)
-	err = cmd.ExecuteCmdShowOutput()
-	errout := cmd.GetStdErr()
-	if err != nil || errout != "" {
-		return fmt.Errorf("%s", errout)
-	}
-	fmt.Println(cmd.GetStdOutput())
-
-	if version >= "1.1.0" {
 		fmt.Println("KubeEdge edgecore is running, For logs visit: ", KubeEdgeLogPath+KubeEdgeBinaryName+".log")
-	} else {
-		fmt.Println("KubeEdge edgecore is running, For logs visit", KubeEdgePath, "kubeedge/edge/")
 	}
 
 	return nil
@@ -459,25 +356,341 @@ func runEdgeCore(version string) error {
 
 // killKubeEdgeBinary will search for KubeEdge process and forcefully kill it
 func killKubeEdgeBinary(proc string) error {
-	binExec := fmt.Sprintf("kill -9 $(ps aux | grep '[%s]%s' | awk '{print $2}')", proc[0:1], proc[1:])
-	if _, err := runCommandWithStdout(binExec); err != nil {
+	var binExec string
+	if proc == "cloudcore" {
+		binExec = fmt.Sprintf("pkill %s", proc)
+	} else {
+		systemdExist := hasSystemd()
+
+		var serviceName string
+		if running, err := isEdgeCoreServiceRunning("edge"); err == nil && running {
+			serviceName = "edge"
+		}
+		if running, err := isEdgeCoreServiceRunning("edgecore"); err == nil && running {
+			serviceName = "edgecore"
+		}
+
+		if systemdExist && serviceName != "" {
+			// remove the system service.
+			serviceFilePath := fmt.Sprintf("/etc/systemd/system/%s.service", serviceName)
+			serviceFileRemoveExec := fmt.Sprintf("&& sudo rm %s", serviceFilePath)
+			if _, err := os.Stat(serviceFilePath); err != nil && os.IsNotExist(err) {
+				serviceFileRemoveExec = ""
+			}
+			binExec = fmt.Sprintf("sudo systemctl stop %s.service && sudo systemctl disable %s.service %s && sudo systemctl daemon-reload", serviceName, serviceName, serviceFileRemoveExec)
+		} else {
+			binExec = fmt.Sprintf("pkill %s", proc)
+		}
+	}
+	cmd := NewCommand(binExec)
+	if err := cmd.Exec(); err != nil {
 		return err
 	}
 
-	fmt.Println("KubeEdge", proc, "is stopped, For logs visit: ", KubeEdgeLogPath+proc+".log")
+	fmt.Println(proc, "is stopped")
 	return nil
 }
 
-//isKubeEdgeProcessRunning checks if the given process is running or not
+// isKubeEdgeProcessRunning checks if the given process is running or not
 func isKubeEdgeProcessRunning(proc string) (bool, error) {
-	procRunning := fmt.Sprintf("ps aux | grep '[%s]%s' | awk '{print $2}'", proc[0:1], proc[1:])
-	stdout, err := runCommandWithStdout(procRunning)
-	if err != nil {
-		return false, err
-	}
-	if stdout != "" {
+	procRunning := fmt.Sprintf("pidof %s 2>&1", proc)
+	cmd := NewCommand(procRunning)
+
+	err := cmd.Exec()
+
+	if cmd.ExitCode == 0 {
 		return true, nil
+	} else if cmd.ExitCode == 1 {
+		return false, nil
 	}
 
-	return false, nil
+	return false, err
+}
+
+func isEdgeCoreServiceRunning(serviceName string) (bool, error) {
+	serviceRunning := fmt.Sprintf("systemctl list-unit-files | grep enabled | grep %s ", serviceName)
+	cmd := NewCommand(serviceRunning)
+	err := cmd.Exec()
+
+	if cmd.ExitCode == 0 {
+		return true, nil
+	} else if cmd.ExitCode == 1 {
+		return false, nil
+	}
+
+	return false, err
+}
+
+// check if systemd exist
+// if command run failed, then check it by sd_booted
+func hasSystemd() bool {
+	cmd := "file /sbin/init"
+
+	if err := NewCommand(cmd).Exec(); err == nil {
+		return true
+	}
+	// checks whether `SystemdBootPath` exists and is a directory
+	// reference http://www.freedesktop.org/software/systemd/man/sd_booted.html
+	fi, err := os.Lstat(SystemdBootPath)
+	if err != nil {
+		return false
+	}
+	return fi.IsDir()
+}
+
+func checkSum(filename, checksumFilename string, version semver.Version, tarballPath string) (bool, error) {
+	//Verify the tar with checksum
+	fmt.Printf("%s checksum: \n", filename)
+	getActualCheckSum := NewCommand(fmt.Sprintf("cd %s && sha512sum %s | awk '{split($0,a,\"[ ]\"); print a[1]}'", tarballPath, filename))
+	if err := getActualCheckSum.Exec(); err != nil {
+		return false, err
+	}
+
+	fmt.Printf("%s content: \n", checksumFilename)
+	getDesiredCheckSum := NewCommand(fmt.Sprintf("wget -qO- %s/v%s/%s", KubeEdgeDownloadURL, version, checksumFilename))
+	if err := getDesiredCheckSum.Exec(); err != nil {
+		return false, err
+	}
+
+	if getDesiredCheckSum.GetStdOut() != getActualCheckSum.GetStdOut() {
+		fmt.Printf("Failed to verify the checksum of %s ... \n\n", filename)
+		return false, nil
+	}
+	return true, nil
+}
+
+func retryDownload(filename, checksumFilename string, version semver.Version, tarballPath string) error {
+	filePath := filepath.Join(tarballPath, filename)
+	for try := 0; try < downloadRetryTimes; try++ {
+		//Download the tar from repo
+		dwnldURL := fmt.Sprintf("cd %s && wget -k --no-check-certificate --progress=bar:force %s/v%s/%s",
+			tarballPath, KubeEdgeDownloadURL, version, filename)
+		if err := NewCommand(dwnldURL).Exec(); err != nil {
+			return err
+		}
+
+		//Verify the tar with checksum
+		success, err := checkSum(filename, checksumFilename, version, tarballPath)
+		if err != nil {
+			return err
+		}
+		if success {
+			return nil
+		}
+		fmt.Printf("Failed to verify the checksum of %s, try to download it again ... \n\n", filename)
+		//Cleanup the downloaded files
+		if err = NewCommand(fmt.Sprintf("rm -f %s", filePath)).Exec(); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("failed to download %s", filename)
+}
+
+// Compressed folders or files
+func Compress(tarName string, paths []string) (err error) {
+	tarFile, err := os.Create(tarName)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = tarFile.Close()
+	}()
+
+	absTar, err := filepath.Abs(tarName)
+	if err != nil {
+		return err
+	}
+
+	// enable compression if file ends in .gz
+	tw := tar.NewWriter(tarFile)
+	if strings.HasSuffix(tarName, ".gz") || strings.HasSuffix(tarName, ".gzip") {
+		gz := gzip.NewWriter(tarFile)
+		defer gz.Close()
+		tw = tar.NewWriter(gz)
+	}
+	defer tw.Close()
+
+	// walk each specified path and add encountered file to tar
+	for _, path := range paths {
+		// validate path
+		path = filepath.Clean(path)
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		if absPath == absTar {
+			fmt.Printf("tar file %s cannot be the source\n", tarName)
+			continue
+		}
+		if absPath == filepath.Dir(absTar) {
+			fmt.Printf("tar file %s cannot be in source %s\n", tarName, absPath)
+			continue
+		}
+
+		walker := func(file string, finfo os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// fill in header info using func FileInfoHeader
+			hdr, err := tar.FileInfoHeader(finfo, finfo.Name())
+			if err != nil {
+				return err
+			}
+
+			relFilePath := file
+			if filepath.IsAbs(path) {
+				relFilePath, err = filepath.Rel(path, file)
+				if err != nil {
+					return err
+				}
+			}
+			// ensure header has relative file path
+			hdr.Name = relFilePath
+
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+			// if path is a dir, dont continue
+			if finfo.Mode().IsDir() {
+				return nil
+			}
+
+			// add file to tar
+			srcFile, err := os.Open(file)
+			if err != nil {
+				return err
+			}
+			defer srcFile.Close()
+			_, err = io.Copy(tw, srcFile)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+
+		// build tar
+		if err := filepath.Walk(path, walker); err != nil {
+			fmt.Printf("failed to add %s to tar: %s\n", path, err)
+		}
+	}
+	return nil
+}
+
+func askForconfirm() (bool, error) {
+	var s string
+
+	fmt.Println("[y/N]: ")
+	if _, err := fmt.Scan(&s); err != nil {
+		return false, err
+	}
+
+	s = strings.ToLower(strings.TrimSpace(s))
+
+	if s == "y" {
+		return true, nil
+	} else if s == "n" {
+		return false, nil
+	} else {
+		return false, fmt.Errorf("Invalid Input")
+	}
+}
+
+// Execute shell script and filter
+func ExecShellFilter(c string) (string, error) {
+	cmd := NewCommand(c)
+	if err := cmd.Exec(); err != nil {
+		return "", err
+	}
+
+	return cmd.GetStdOut(), nil
+}
+
+func FileExists(path string) bool {
+	_, err := os.Stat(path)
+	if err != nil {
+		return os.IsExist(err)
+	}
+	return true
+}
+
+func ParseEdgecoreConfig(edgecorePath string) (*v1alpha1.EdgeCoreConfig, error) {
+	edgeCoreConfig := v1alpha1.NewDefaultEdgeCoreConfig()
+	if err := edgeCoreConfig.Parse(edgecorePath); err != nil {
+		return nil, err
+	}
+	return edgeCoreConfig, nil
+}
+
+// Determine if it is in the array
+func IsContain(items []string, item string) bool {
+	for _, eachItem := range items {
+		if eachItem == item {
+			return true
+		}
+	}
+	return false
+}
+
+// print fail
+func PrintFail(cmd string, s string) {
+	v := fmt.Sprintf("|%s %s failed|", s, cmd)
+	printResult(v)
+}
+
+//print success
+func PrintSucceed(cmd string, s string) {
+	v := fmt.Sprintf("|%s %s succeed|", s, cmd)
+	printResult(v)
+}
+
+func printResult(s string) {
+	line := "|"
+	if len(s) > 2 {
+		for i := 0; i < len(s)-2; i++ {
+			line = line + "-"
+		}
+		line = line + "|"
+	}
+
+	fmt.Println("")
+	fmt.Println(line)
+	fmt.Println(s)
+	fmt.Println(line)
+}
+
+func downloadServiceFile(componentType types.ComponentType, version semver.Version, storeDir string) error {
+	// No need to download if
+	// 1. the systemd not exists
+	// 2. the service file already exists
+	if hasSystemd() {
+		var ServiceFileName string
+		switch componentType {
+		case types.CloudCore:
+			ServiceFileName = CloudServiceFile
+		case types.EdgeCore:
+			ServiceFileName = EdgeServiceFile
+		default:
+			return fmt.Errorf("component type %s not support", componentType)
+		}
+		ServiceFilePath := storeDir + "/" + ServiceFileName
+		strippedVersion := fmt.Sprintf("%d.%d", version.Major, version.Minor)
+		ServiceFileURL := fmt.Sprintf(ServiceFileURLFormat, strippedVersion, ServiceFileName)
+		if _, err := os.Stat(ServiceFilePath); err != nil {
+			if os.IsNotExist(err) {
+				cmdStr := fmt.Sprintf("cd %s && sudo -E wget -t %d -k --no-check-certificate %s", storeDir, RetryTimes, ServiceFileURL)
+				fmt.Printf("[Run as service] start to download service file for %s\n", componentType)
+				if err := NewCommand(cmdStr).Exec(); err != nil {
+					return err
+				}
+				fmt.Printf("[Run as service] success to download service file for %s\n", componentType)
+			} else {
+				return err
+			}
+		} else {
+			fmt.Printf("[Run as service] service file already exisits in %s, skip download\n", ServiceFilePath)
+		}
+	}
+	return nil
 }

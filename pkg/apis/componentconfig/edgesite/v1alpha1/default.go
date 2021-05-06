@@ -76,7 +76,7 @@ func NewDefaultEdgeSiteConfig() *EdgeSiteConfig {
 					UpdateNode:                 constants.DefaultUpdateNodeBuffer,
 					DeletePod:                  constants.DefaultDeletePodBuffer,
 				},
-				Context: &cloudcoreconfig.EdgeControllerContext{
+				Context: &cloudcoreconfig.ControllerContext{
 					SendModule:     metaconfig.ModuleNameMetaManager,
 					ReceiveModule:  metaconfig.ModuleNameEdgeController,
 					ResponseModule: metaconfig.ModuleNameMetaManager,
@@ -112,8 +112,8 @@ func NewDefaultEdgeSiteConfig() *EdgeSiteConfig {
 				RuntimeRequestTimeout:       constants.DefaultRuntimeRequestTimeout,
 				HostnameOverride:            hostnameOverride,
 				RegisterNode:                true,
+				ConcurrentConsumers:         constants.DefaultConcurrentConsumers,
 				RegisterNodeNamespace:       constants.DefaultRegisterNodeNamespace,
-				InterfaceName:               constants.DefaultInterfaceName,
 				DevicePluginEnabled:         false,
 				GPUPluginEnabled:            false,
 				ImageGCHighThreshold:        constants.DefaultImageGCHighThreshold,
@@ -126,6 +126,7 @@ func NewDefaultEdgeSiteConfig() *EdgeSiteConfig {
 				ContextSendGroup:      metaconfig.GroupNameEdgeController,
 				ContextSendModule:     metaconfig.ModuleNameEdgeController,
 				PodStatusSyncInterval: constants.DefaultPodStatusSyncInterval,
+				RemoteQueryTimeout:    constants.DefaultRemoteQueryTimeout,
 			},
 		},
 	}
@@ -159,13 +160,11 @@ func NewMinEdgeSiteConfig() *EdgeSiteConfig {
 				ClusterDomain:         "",
 				RemoteRuntimeEndpoint: constants.DefaultRemoteRuntimeEndpoint,
 				RemoteImageEndpoint:   constants.DefaultRemoteImageEndpoint,
-				//TODO (@kuramal) Automatically set PodSandboxImage according to the architecture.(x86,amd64,arm or arm64)
-				PodSandboxImage:     constants.DefaultPodSandboxImage,
-				HostnameOverride:    hostnameOverride,
-				InterfaceName:       constants.DefaultInterfaceName,
-				DevicePluginEnabled: false,
-				GPUPluginEnabled:    false,
-				CGroupDriver:        edgecoreconfig.CGroupDriverCGroupFS,
+				PodSandboxImage:       util.GetPodSandboxImage(),
+				HostnameOverride:      hostnameOverride,
+				DevicePluginEnabled:   false,
+				GPUPluginEnabled:      false,
+				CGroupDriver:          edgecoreconfig.CGroupDriverCGroupFS,
 			},
 		},
 	}

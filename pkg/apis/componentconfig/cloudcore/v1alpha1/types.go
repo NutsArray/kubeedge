@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	componentbaseconfig "k8s.io/component-base/config"
 
@@ -44,7 +46,7 @@ type KubeAPIConfig struct {
 	// Note: Can not use "omitempty" option,  It will affect the output of the default configuration file
 	Master string `json:"master"`
 	// ContentType indicates the ContentType of message transmission when interacting with k8s
-	// default application/vnd.kubernetes.protobuf
+	// default "application/vnd.kubernetes.protobuf"
 	ContentType string `json:"contentType,omitempty"`
 	// QPS to while talking with kubernetes apiserve
 	// default 100
@@ -68,8 +70,12 @@ type Modules struct {
 	DeviceController *DeviceController `json:"deviceController,omitempty"`
 	// SyncController indicates SyncController module config
 	SyncController *SyncController `json:"syncController,omitempty"`
+	// DynamicController indicates DynamicController module config
+	DynamicController *DynamicController `json:"dynamicController,omitempty"`
 	// CloudStream indicates cloudstream module config
 	CloudStream *CloudStream `json:"cloudStream,omitempty"`
+	// Router indicates router module config
+	Router *Router `json:"router,omitempty"`
 }
 
 // CloudHub indicates the config of CloudHub module.
@@ -84,7 +90,7 @@ type CloudHub struct {
 	// default 30
 	KeepaliveInterval int32 `json:"keepaliveInterval,omitempty"`
 	// NodeLimit indicates node limit
-	// default 10
+	// default 1000
 	NodeLimit int32 `json:"nodeLimit,omitempty"`
 	// TLSCAFile indicates ca file path
 	// default "/etc/kubeedge/ca/rootCA.crt"
@@ -110,7 +116,17 @@ type CloudHub struct {
 	WebSocket *CloudHubWebSocket `json:"websocket,omitempty"`
 	// HTTPS indicates https server info
 	// +Required
-	Https *CloudHubHttps `json:"https,omitempty"`
+	HTTPS *CloudHubHTTPS `json:"https,omitempty"`
+	// AdvertiseAddress sets the IP address for the cloudcore to advertise.
+	AdvertiseAddress []string `json:"advertiseAddress,omitempty"`
+	// DNSNames sets the DNSNames for CloudCore.
+	DNSNames []string `json:"dnsNames,omitempty"`
+	// EdgeCertSigningDuration indicates the validity period of edge certificate
+	// default 365d
+	EdgeCertSigningDuration time.Duration `json:"edgeCertSigningDuration,omitempty"`
+	// TokenRefreshDuration indicates the interval of cloudcore token refresh, unit is hour
+	// default 12h
+	TokenRefreshDuration time.Duration `json:"tokenRefreshDuration,omitempty"`
 }
 
 // CloudHubQUIC indicates the quic server config
@@ -153,7 +169,7 @@ type CloudHubWebSocket struct {
 }
 
 // CloudHubHttps indicates the http config of CloudHub
-type CloudHubHttps struct {
+type CloudHubHTTPS struct {
 	// Enable indicates whether enable Https protocol
 	// default true
 	Enable bool `json:"enable,omitempty"`
@@ -177,7 +193,7 @@ type EdgeController struct {
 	// Buffer indicates k8s resource buffer
 	Buffer *EdgeControllerBuffer `json:"buffer,omitempty"`
 	// Context indicates send,receive,response modules for EdgeController module
-	Context *EdgeControllerContext `json:"context,omitempty"`
+	Context *ControllerContext `json:"context,omitempty"`
 	// Load indicates EdgeController load
 	Load *EdgeControllerLoad `json:"load,omitempty"`
 }
@@ -217,6 +233,12 @@ type EdgeControllerBuffer struct {
 	// EndpointsEvent indicates the buffer of endpoint event
 	// default 1
 	EndpointsEvent int32 `json:"endpointsEvent,omitempty"`
+	// RulesEvent indicates the buffer of rule event
+	// default 1
+	RulesEvent int32 `json:"rulesEvent,omitempty"`
+	// RuleEndpointsEvent indicates the buffer of endpoint event
+	// default 1
+	RuleEndpointsEvent int32 `json:"ruleEndpointsEvent,omitempty"`
 	// QueryPersistentVolume indicates the buffer of query persistent volume
 	// default 1024
 	QueryPersistentVolume int32 `json:"queryPersistentVolume,omitempty"`
@@ -237,10 +259,12 @@ type EdgeControllerBuffer struct {
 	DeletePod int32 `json:"deletePod,omitempty"`
 }
 
-// EdgeControllerContext indicates the EdgeController context
-type EdgeControllerContext struct {
+// ControllerContext indicates the message layer context for all controllers
+type ControllerContext struct {
 	// SendModule indicates which module will send message to
 	SendModule metaconfig.ModuleName `json:"sendModule,omitempty"`
+	// SendRouterModule indicates which module will send router message to
+	SendRouterModule metaconfig.ModuleName `json:"sendRouterModule,omitempty"`
 	// ReceiveModule indicates which module will receive message from
 	ReceiveModule metaconfig.ModuleName `json:"receiveModule,omitempty"`
 	// ResponseModule indicates which module will response message to
@@ -256,7 +280,7 @@ type EdgeControllerLoad struct {
 	// default 1
 	UpdateNodeStatusWorkers int32 `json:"updateNodeStatusWorkers,omitempty"`
 	// QueryConfigMapWorkers indicates the load of query config map workers
-	// default 1
+	// default 4
 	QueryConfigMapWorkers int32 `json:"queryConfigMapWorkers,omitempty"`
 	// QuerySecretWorkers indicates the load of query secret workers
 	// default 4
@@ -294,21 +318,11 @@ type DeviceController struct {
 	// default true
 	Enable bool `json:"enable,omitempty"`
 	// Context indicates send,receive,response modules for deviceController module
-	Context *DeviceControllerContext `json:"context,omitempty"`
+	Context *ControllerContext `json:"context,omitempty"`
 	// Buffer indicates Device controller buffer
 	Buffer *DeviceControllerBuffer `json:"buffer,omitempty"`
 	// Load indicates DeviceController Load
 	Load *DeviceControllerLoad `json:"load,omitempty"`
-}
-
-// DeviceControllerContext indicates the device controller context
-type DeviceControllerContext struct {
-	// SendModule indicates which module will send message to
-	SendModule metaconfig.ModuleName `json:"sendModule,omitempty"`
-	// ReceiveModule indicates which module will receive message from
-	ReceiveModule metaconfig.ModuleName `json:"receiveModule,omitempty"`
-	// ResponseModule indicates which module will response message to
-	ResponseModule metaconfig.ModuleName `json:"responseModule,omitempty"`
 }
 
 // DeviceControllerBuffer indicates deviceController buffer
@@ -339,6 +353,14 @@ type SyncController struct {
 	Enable bool `json:"enable,omitempty"`
 }
 
+// DynamicController indicates the dynamic controller
+type DynamicController struct {
+	// Enable indicates whether dynamicController is enabled,
+	// if set to false (for debugging etc.), skip checking other dynamicController configs.
+	// default true
+	Enable bool `json:"enable,omitempty"`
+}
+
 // CloudSream indicates the stream controller
 type CloudStream struct {
 	// Enable indicates whether cloudstream is enabled, if set to false (for debugging etc.), skip checking other configs.
@@ -349,13 +371,13 @@ type CloudStream struct {
 	// default /etc/kubeedge/ca/rootCA.crt
 	TLSTunnelCAFile string `json:"tlsTunnelCAFile,omitempty"`
 	// TLSTunnelCertFile indicates cert file path
-	// default /etc/kubeedge/certs/edge.crt
+	// default /etc/kubeedge/certs/server.crt
 	TLSTunnelCertFile string `json:"tlsTunnelCertFile,omitempty"`
 	// TLSTunnelPrivateKeyFile indicates key file path
-	// default /etc/kubeedge/certs/edge.key
+	// default /etc/kubeedge/certs/server.key
 	TLSTunnelPrivateKeyFile string `json:"tlsTunnelPrivateKeyFile,omitempty"`
 	// TunnelPort set open port for tunnel server
-	// default 10002
+	// default 10004
 	TunnelPort uint32 `json:"tunnelPort,omitempty"`
 
 	// TLSStreamCAFile indicates kube-apiserver ca file path
@@ -370,4 +392,12 @@ type CloudStream struct {
 	// StreamPort set open port for stream server
 	// default 10003
 	StreamPort uint32 `json:"streamPort,omitempty"`
+}
+
+type Router struct {
+	// default true
+	Enable      bool   `json:"enable,omitempty"`
+	Address     string `json:"address,omitempty"`
+	Port        uint32 `json:"port,omitempty"`
+	RestTimeout uint32 `json:"restTimeout,omitempty"`
 }

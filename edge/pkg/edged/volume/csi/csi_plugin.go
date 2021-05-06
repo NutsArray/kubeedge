@@ -43,9 +43,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	clientset "k8s.io/client-go/kubernetes"
-	storagelisters "k8s.io/client-go/listers/storage/v1beta1"
+	storagelisters "k8s.io/client-go/listers/storage/v1"
 	csitranslationplugins "k8s.io/csi-translation-lib/plugins"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/volume"
 
@@ -67,10 +67,8 @@ const (
 	fsTypeBlockName = "block"
 
 	// TODO: increase to something useful
-	csiResyncPeriod = time.Minute
+	//csiResyncPeriod = time.Minute
 )
-
-var deprecatedSocketDirVersions = []string{"0.1.0", "0.2.0", "0.3.0", "0.4.0"}
 
 type csiPlugin struct {
 	host            volume.VolumeHost
@@ -353,7 +351,6 @@ func (p *csiPlugin) NewMounter(
 	spec *volume.Spec,
 	pod *api.Pod,
 	_ volume.VolumeOptions) (volume.Mounter, error) {
-
 	volSrc, pvSrc, err := getSourceFromSpec(spec)
 	if err != nil {
 		return nil, err
@@ -661,7 +658,7 @@ func (p *csiPlugin) getPublishContext(client clientset.Interface, handle, driver
 	attachID := getAttachmentName(handle, driver, nodeName)
 
 	// search for attachment by VolumeAttachment.Spec.Source.PersistentVolumeName
-	attachment, err := client.StorageV1().VolumeAttachments().Get(attachID, meta.GetOptions{})
+	attachment, err := client.StorageV1().VolumeAttachments().Get(context.Background(), attachID, meta.GetOptions{})
 	if err != nil {
 		return nil, err // This err already has enough context ("VolumeAttachment xyz not found")
 	}
