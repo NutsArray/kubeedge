@@ -1,6 +1,8 @@
 package listener
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -47,12 +49,29 @@ func (rh *RestHandler) Serve() {
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", rh.bindAddress, rh.port),
 		Handler: mux,
-		// TODO: add tls for router
 	}
-	klog.Infof("router server listening in %d...", rh.port)
-	//err := server.ListenAndServeTLS("", "")
-	if err := server.ListenAndServe(); err != nil {
-		klog.Errorf("start rest endpoint failed, err: %v", err)
+	if routerConfig.Config.IsSecure {
+		pool := x509.NewCertPool()
+		data, err := ioutil.ReadFile(routerConfig.Config.TLSRouterCAFile)
+		if err != nil {
+			klog.Fatalf("Read tls stream ca file error %v", err)
+			return
+		}
+		pool.AppendCertsFromPEM(data)
+		server.TLSConfig = &tls.Config{
+			ClientCAs: pool,
+			// Populate PeerCertificates in requests, but don't reject connections without verified certificates
+			ClientAuth: tls.RequestClientCert,
+		}
+		klog.Infof("router server listening in secure port %d...", rh.port)
+		if err := server.ListenAndServeTLS(routerConfig.Config.TLSRouterCertFile, routerConfig.Config.TLSRouterPrivateKeyFile); err != nil {
+			klog.Errorf("start secure rest endpoint failed, err: %v", err)
+		}
+	} else {
+		klog.Infof("router server listening in %d...", rh.port)
+		if err := server.ListenAndServe(); err != nil {
+			klog.Errorf("start rest endpoint failed, err: %v", err)
+		}
 	}
 }
 

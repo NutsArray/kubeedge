@@ -99,7 +99,7 @@ var _ = Describe("Rule Management test in E2E scenario", func() {
 			}()
 			time.Sleep(3 * time.Second)
 			// call rest api to send message to edge.
-			IsSend, statusCode := utils.SendMsg("http://127.0.0.1:9443/edge-node/default/ccc", []byte(msg))
+			IsSend, statusCode := utils.SendMsg("https://127.0.0.1:9443/edge-node/default/ccc", []byte(msg))
 			Expect(IsSend).Should(BeTrue())
 			Expect(statusCode).Should(Equal(http.StatusOK))
 			Eventually(func() bool {

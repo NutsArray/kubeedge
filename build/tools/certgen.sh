@@ -48,6 +48,54 @@ genCertAndKey() {
     genCert $name
 }
 
+GenSpecificCaAndCert() {
+    ensureFolder
+    readonly specificsubject=${SUBJECT:-/C=CN/ST=Zhejiang/L=Hangzhou/O=KubeEdge}
+
+    if [ ! -n "$1" ];then
+        echo -e "You must set CA and Cert Files Name"
+        exit 1
+    fi
+
+    if [ -z ${CLOUDCOREIPS} ]; then
+        echo "You must set CLOUDCOREIPS Env,The environment variable is set to specify the IP addresses of all cloudcore"
+        echo "If there are more than one IP need to be separated with space."
+        exit 1
+    fi
+
+    readonly CA_FILE=${caPath}/$1"CA.crt"
+    readonly KEY_FILE=${certPath}/$1".key"
+    readonly CSR_FILE=${certPath}/$1".csr"
+    readonly CRT_FILE=${certPath}/$1".crt"
+
+    echo "CAFile: $CA_FILE"
+    echo "CertFile: $CRT_FILE"
+    echo "PrivateKeyFile: $KEY_FILE"
+
+    readonly K8SCA_FILE=/etc/kubernetes/pki/ca.crt
+    readonly K8SCA_KEY_FILE=/etc/kubernetes/pki/ca.key
+
+    index=1
+    SUBJECTALTNAME="subjectAltName = IP.1:127.0.0.1"
+    for ip in ${CLOUDCOREIPS}; do
+        SUBJECTALTNAME="${SUBJECTALTNAME},"
+        index=$(($index+1))
+        SUBJECTALTNAME="${SUBJECTALTNAME}IP.${index}:${ip}"
+    done
+
+    cp $K8SCA_FILE $CA_FILE
+    echo $SUBJECTALTNAME > /tmp/server-extfile.cnf
+
+    openssl genrsa -out ${KEY_FILE}  2048
+    openssl req -new -key ${KEY_FILE} -subj ${specificsubject} -out ${CSR_FILE}
+
+    # verify
+    openssl req -in ${CSR_FILE} -noout -text
+    openssl x509 -req -in ${CSR_FILE} -CA ${K8SCA_FILE} -CAkey ${K8SCA_KEY_FILE} -CAcreateserial -out ${CRT_FILE} -days 5000 -sha256 -extfile /tmp/server-extfile.cnf
+    #verify
+    openssl x509 -in ${CRT_FILE} -text -noout
+}
+
 stream() {
     ensureFolder
     readonly streamsubject=${SUBJECT:-/C=CN/ST=Zhejiang/L=Hangzhou/O=KubeEdge}

@@ -104,7 +104,7 @@ function start_cloudcore {
   sed -i -e "s|kubeConfig: .*|kubeConfig: ${KUBECONFIG}|g" \
     -e "s|/var/lib/kubeedge/|/tmp&|g" \
     -e "s|/etc/|/tmp/etc/|g" \
-    -e '/router:/a\    enable: true' ${CLOUD_CONFIGFILE}
+    -e '/router:/a\    enable: true\n    IsSecure: true\n    tlsRouterCAFile: /etc/kubeedge/ca/routerCA.crt\n    tlsRouterCertFile: /etc/kubeedge/certs/router.crt\n    tlsRouterPrivateKeyFile: /etc/kubeedge/certs/router.key' ${CLOUD_CONFIGFILE}
   CLOUDCORE_LOG=${LOG_DIR}/cloudcore.log
   echo "start cloudcore..."
   nohup sudo ${CLOUD_BIN} --config=${CLOUD_CONFIGFILE} > "${CLOUDCORE_LOG}" 2>&1 &
@@ -193,6 +193,15 @@ function generate_streamserver_cert {
   openssl x509 -req -in ${STREAM_CSR_FILE} -CA ${K8SCA_FILE} -CAkey ${K8SCA_KEY_FILE} -CAcreateserial -out ${STREAM_CRT_FILE} -days 5000 -sha256 -extfile /tmp/server-extfile.cnf
 }
 
+function generate_routerserver_cert {
+  CA_PATH=${CA_PATH:-/tmp/etc/kubeedge/ca}
+  CERT_PATH=${CERT_PATH:-/tmp/etc/kubeedge/certs}
+  cp ${CA_PATH}/streamCA.crt ${CA_PATH}/routerCA.crt
+  cp ${CERT_PATH}/stream.key ${CERT_PATH}/router.key
+  cp ${CERT_PATH}/stream.csr ${CERT_PATH}/router.csr
+  cp ${CERT_PATH}/stream.crt ${CERT_PATH}/router.crt
+}
+
 cleanup
 
 source "${KUBEEDGE_ROOT}/hack/lib/install.sh"
@@ -220,6 +229,7 @@ create_objectsync_crd
 create_rule_crd
 
 generate_streamserver_cert
+generate_routerserver_cert
 
 start_cloudcore
 
