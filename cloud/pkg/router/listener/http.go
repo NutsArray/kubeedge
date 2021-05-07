@@ -1,6 +1,8 @@
 package listener
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -24,6 +26,7 @@ type RestHandler struct {
 	handlers    sync.Map
 	port        int
 	bindAddress string
+	securePort  int
 }
 
 func InitHandler() {
@@ -34,9 +37,8 @@ func InitHandler() {
 	RestHandlerInstance.restTimeout = time.Duration(timeout) * time.Second
 	RestHandlerInstance.bindAddress = routerConfig.Config.Address
 	RestHandlerInstance.port = int(routerConfig.Config.Port)
-	if RestHandlerInstance.port <= 0 {
-		RestHandlerInstance.port = 9443
-	}
+	RestHandlerInstance.securePort = int(routerConfig.Config.SecurePort)
+
 	klog.Infof("rest init: %v", RestHandlerInstance)
 }
 
@@ -44,15 +46,52 @@ func (rh *RestHandler) Serve() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", rh.httpHandler)
 
+	// If Config.Port set to 0,the secure port is closed
+	if int(routerConfig.Config.Port) != 0 {
+		go startInSecureServer(rh)
+	}
+
+	// If set to 0 , the secure port is closed
+	if int(routerConfig.Config.SecurePort) != 0 {
+		go startSecureServer(rh)
+	}
+}
+
+func startInSecureServer(rh *RestHandler) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", rh.httpHandler)
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", rh.bindAddress, rh.port),
 		Handler: mux,
-		// TODO: add tls for router
 	}
-	klog.Infof("router server listening in %d...", rh.port)
-	//err := server.ListenAndServeTLS("", "")
+	klog.Infof("Router server listening in %d...", rh.port)
 	if err := server.ListenAndServe(); err != nil {
-		klog.Errorf("start rest endpoint failed, err: %v", err)
+		klog.Errorf("Start rest endpoint failed, err: %v", err)
+	}
+}
+
+func startSecureServer(rh *RestHandler) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", rh.httpHandler)
+	pool := x509.NewCertPool()
+	data, err := ioutil.ReadFile(routerConfig.Config.TLSRouterCAFile)
+	if err != nil {
+		klog.Fatalf("Read tls router ca file error %v", err)
+		return
+	}
+	pool.AppendCertsFromPEM(data)
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", rh.bindAddress, rh.securePort),
+		Handler: mux,
+		TLSConfig: &tls.Config{
+			ClientCAs: pool,
+			// Populate PeerCertificates in requests, but don't reject connections without verified certificates
+			ClientAuth: tls.RequestClientCert,
+		},
+	}
+	klog.Infof("Router server listening in secure port %d...", rh.securePort)
+	if err := server.ListenAndServeTLS(routerConfig.Config.TLSRouterCertFile, routerConfig.Config.TLSRouterPrivateKeyFile); err != nil {
+		klog.Errorf("Start secure rest endpoint failed, err: %v", err)
 	}
 }
 
