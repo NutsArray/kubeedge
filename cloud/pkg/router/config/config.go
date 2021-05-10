@@ -3,8 +3,9 @@ package config
 import (
 	"encoding/pem"
 	"io/ioutil"
-	"k8s.io/klog/v2"
 	"sync"
+
+	"k8s.io/klog/v2"
 
 	"github.com/kubeedge/kubeedge/pkg/apis/componentconfig/cloudcore/v1alpha1"
 )
