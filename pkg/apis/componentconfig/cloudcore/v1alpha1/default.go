@@ -160,12 +160,12 @@ func NewDefaultCloudCoreConfig() *CloudCoreConfig {
 			Router: &Router{
 				Enable:                  false,
 				Address:                 "0.0.0.0",
-				Port:                    9443,
+				Port:                    10005,
 				RestTimeout:             60,
+				SecurePort:              0,
 				TLSRouterCAFile:         constants.DefaultRouterCAFile,
 				TLSRouterCertFile:       constants.DefaultRouterCertFile,
 				TLSRouterPrivateKeyFile: constants.DefaultRouterKeyFile,
-				IsSecure:                false,
 			},
 		},
 		LeaderElection: &componentbaseconfig.LeaderElectionConfiguration{
@@ -220,7 +220,7 @@ func NewMinCloudCoreConfig() *CloudCoreConfig {
 			Router: &Router{
 				Enable:      false,
 				Address:     "0.0.0.0",
-				Port:        9443,
+				Port:        10005,
 				RestTimeout: 60,
 			},
 		},

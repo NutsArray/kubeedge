@@ -104,7 +104,7 @@ function start_cloudcore {
   sed -i -e "s|kubeConfig: .*|kubeConfig: ${KUBECONFIG}|g" \
     -e "s|/var/lib/kubeedge/|/tmp&|g" \
     -e "s|/etc/|/tmp/etc/|g" \
-    -e '/router:/a\    enable: true\n    IsSecure: true\n    tlsRouterCAFile: /etc/kubeedge/ca/routerCA.crt\n    tlsRouterCertFile: /etc/kubeedge/certs/router.crt\n    tlsRouterPrivateKeyFile: /etc/kubeedge/certs/router.key' ${CLOUD_CONFIGFILE}
+    -e '/router:/a\    enable: true\n    securePort: 9443\n' ${CLOUD_CONFIGFILE}
   CLOUDCORE_LOG=${LOG_DIR}/cloudcore.log
   echo "start cloudcore..."
   nohup sudo ${CLOUD_BIN} --config=${CLOUD_CONFIGFILE} > "${CLOUDCORE_LOG}" 2>&1 &
@@ -193,13 +193,42 @@ function generate_streamserver_cert {
   openssl x509 -req -in ${STREAM_CSR_FILE} -CA ${K8SCA_FILE} -CAkey ${K8SCA_KEY_FILE} -CAcreateserial -out ${STREAM_CRT_FILE} -days 5000 -sha256 -extfile /tmp/server-extfile.cnf
 }
 
-function generate_routerserver_cert {
+function generate_cert {
+    if [ ! -n "$1" ];then
+        echo -e "You must set CA and Cert Files Name"
+        exit 1
+    fi
   CA_PATH=${CA_PATH:-/tmp/etc/kubeedge/ca}
   CERT_PATH=${CERT_PATH:-/tmp/etc/kubeedge/certs}
-  cp ${CA_PATH}/streamCA.crt ${CA_PATH}/routerCA.crt
-  cp ${CERT_PATH}/stream.key ${CERT_PATH}/router.key
-  cp ${CERT_PATH}/stream.csr ${CERT_PATH}/router.csr
-  cp ${CERT_PATH}/stream.crt ${CERT_PATH}/router.crt
+  KEY_FILE=${CERT_PATH}/$1.key
+  CSR_FILE=${CERT_PATH}/$1.csr
+  CRT_FILE=${CERT_PATH}/$1.crt
+  K8SCA_FILE=/tmp/etc/kubernetes/pki/ca.crt
+  K8SCA_KEY_FILE=/tmp/etc/kubernetes/pki/ca.key
+  routersubject=${SUBJECT:-/C=CN/ST=Zhejiang/L=Hangzhou/O=KubeEdge}
+
+  if [[ ! -d /tmp/etc/kubernetes/pki ]] ; then
+    mkdir -p /tmp/etc/kubernetes/pki
+  fi
+  if [[ ! -d $CA_PATH ]] ; then
+	mkdir -p $CA_PATH
+  fi
+  if [[ ! -d $CERT_PATH ]] ; then
+	mkdir -p $CERT_PATH
+  fi
+
+  docker cp ${CLUSTER_NAME}-control-plane:/etc/kubernetes/pki/ca.crt $K8SCA_FILE
+  docker cp ${CLUSTER_NAME}-control-plane:/etc/kubernetes/pki/ca.key $K8SCA_KEY_FILE
+  cp /tmp/etc/kubernetes/pki/ca.crt /tmp/etc/kubeedge/ca/routerCA.crt
+
+  SUBJECTALTNAME="subjectAltName = IP.1:127.0.0.1"
+  echo $SUBJECTALTNAME > /tmp/server-extfile.cnf
+
+  touch ~/.rnd
+
+  openssl genrsa -out ${KEY_FILE}  2048
+  openssl req -new -key ${KEY_FILE} -subj ${routersubject} -out ${CSR_FILE}
+  openssl x509 -req -in ${CSR_FILE} -CA ${K8SCA_FILE} -CAkey ${K8SCA_KEY_FILE} -CAcreateserial -out ${CRT_FILE} -days 5000 -sha256 -extfile /tmp/server-extfile.cnf
 }
 
 cleanup
@@ -229,7 +258,7 @@ create_objectsync_crd
 create_rule_crd
 
 generate_streamserver_cert
-generate_routerserver_cert
+generate_cert router
 
 start_cloudcore
 
