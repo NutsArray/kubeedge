@@ -15,6 +15,7 @@ import (
 
 	routerConfig "github.com/kubeedge/kubeedge/cloud/pkg/router/config"
 	"github.com/kubeedge/kubeedge/cloud/pkg/router/utils"
+	"github.com/kubeedge/kubeedge/pkg/util/validation"
 )
 
 var (
@@ -26,6 +27,7 @@ type RestHandler struct {
 	handlers    sync.Map
 	port        int
 	bindAddress string
+	securePort  int
 }
 
 func InitHandler() {
@@ -36,9 +38,12 @@ func InitHandler() {
 	RestHandlerInstance.restTimeout = time.Duration(timeout) * time.Second
 	RestHandlerInstance.bindAddress = routerConfig.Config.Address
 	RestHandlerInstance.port = int(routerConfig.Config.Port)
-	if RestHandlerInstance.port <= 0 {
-		RestHandlerInstance.port = 9443
+	RestHandlerInstance.securePort = int(routerConfig.Config.SecurePort)
+	if validation.IsValidPortNum(RestHandlerInstance.port) != nil &&
+		validation.IsValidPortNum(RestHandlerInstance.securePort) != nil {
+		RestHandlerInstance.port = 10005
 	}
+
 	klog.Infof("rest init: %v", RestHandlerInstance)
 }
 
@@ -46,32 +51,50 @@ func (rh *RestHandler) Serve() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", rh.httpHandler)
 
+	if validation.IsValidPortNum(int(routerConfig.Config.Port)) == nil {
+		go startInSecureServer(rh)
+	}
+
+	if validation.IsValidPortNum(int(routerConfig.Config.SecurePort)) == nil {
+		go startSecureServer(rh)
+	}
+}
+
+func startInSecureServer(rh *RestHandler) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", rh.httpHandler)
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", rh.bindAddress, rh.port),
 		Handler: mux,
 	}
-	if routerConfig.Config.IsSecure {
-		pool := x509.NewCertPool()
-		data, err := ioutil.ReadFile(routerConfig.Config.TLSRouterCAFile)
-		if err != nil {
-			klog.Fatalf("Read tls stream ca file error %v", err)
-			return
-		}
-		pool.AppendCertsFromPEM(data)
-		server.TLSConfig = &tls.Config{
+	klog.Infof("Router server listening in %d...", rh.port)
+	if err := server.ListenAndServe(); err != nil {
+		klog.Errorf("Start rest endpoint failed, err: %v", err)
+	}
+}
+
+func startSecureServer(rh *RestHandler) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", rh.httpHandler)
+	pool := x509.NewCertPool()
+	data, err := ioutil.ReadFile(routerConfig.Config.TLSRouterCAFile)
+	if err != nil {
+		klog.Fatalf("Read tls router ca file error %v", err)
+		return
+	}
+	pool.AppendCertsFromPEM(data)
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", rh.bindAddress, rh.securePort),
+		Handler: mux,
+		TLSConfig: &tls.Config{
 			ClientCAs: pool,
 			// Populate PeerCertificates in requests, but don't reject connections without verified certificates
 			ClientAuth: tls.RequestClientCert,
-		}
-		klog.Infof("router server listening in secure port %d...", rh.port)
-		if err := server.ListenAndServeTLS(routerConfig.Config.TLSRouterCertFile, routerConfig.Config.TLSRouterPrivateKeyFile); err != nil {
-			klog.Errorf("start secure rest endpoint failed, err: %v", err)
-		}
-	} else {
-		klog.Infof("router server listening in %d...", rh.port)
-		if err := server.ListenAndServe(); err != nil {
-			klog.Errorf("start rest endpoint failed, err: %v", err)
-		}
+		},
+	}
+	klog.Infof("Router server listening in secure port %d...", rh.securePort)
+	if err := server.ListenAndServeTLS(routerConfig.Config.TLSRouterCertFile, routerConfig.Config.TLSRouterPrivateKeyFile); err != nil {
+		klog.Errorf("Start secure rest endpoint failed, err: %v", err)
 	}
 }
 

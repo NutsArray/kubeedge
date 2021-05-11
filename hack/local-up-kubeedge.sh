@@ -104,7 +104,7 @@ function start_cloudcore {
   sed -i -e "s|kubeConfig: .*|kubeConfig: ${KUBECONFIG}|g" \
     -e "s|/var/lib/kubeedge/|/tmp&|g" \
     -e "s|/etc/|/tmp/etc/|g" \
-    -e '/router:/a\    enable: true\n    IsSecure: true\n    tlsRouterCAFile: /etc/kubeedge/ca/routerCA.crt\n    tlsRouterCertFile: /etc/kubeedge/certs/router.crt\n    tlsRouterPrivateKeyFile: /etc/kubeedge/certs/router.key' ${CLOUD_CONFIGFILE}
+    -e '/router:/a\    enable: true\n    securePort: 9443\n' ${CLOUD_CONFIGFILE}
   CLOUDCORE_LOG=${LOG_DIR}/cloudcore.log
   echo "start cloudcore..."
   nohup sudo ${CLOUD_BIN} --config=${CLOUD_CONFIGFILE} > "${CLOUDCORE_LOG}" 2>&1 &
