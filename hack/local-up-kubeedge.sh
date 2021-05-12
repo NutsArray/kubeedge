@@ -202,7 +202,7 @@ function generate_cert {
   CERT_PATH=${CERT_PATH:-/tmp/etc/kubeedge/certs}
   KEY_FILE=${CERT_PATH}/$1.key
   CSR_FILE=${CERT_PATH}/$1.csr
-  CRT_FILE=${CERT_PATH}/$1CA.crt
+  CRT_FILE=${CERT_PATH}/$1.crt
   K8SCA_FILE=/tmp/etc/kubernetes/pki/ca.crt
   K8SCA_KEY_FILE=/tmp/etc/kubernetes/pki/ca.key
   routersubject=${SUBJECT:-/C=CN/ST=Zhejiang/L=Hangzhou/O=KubeEdge}
