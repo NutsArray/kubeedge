@@ -227,7 +227,7 @@ function generate_cert {
   touch ~/.rnd
 
   openssl genrsa -out ${KEY_FILE}  2048
-  openssl req -new -key ${KEY_FILE} -subj ${routersubject} -out ${ROUTER_CSR_FILE}
+  openssl req -new -key ${KEY_FILE} -subj ${routersubject} -out ${CSR_FILE}
   openssl x509 -req -in ${CSR_FILE} -CA ${K8SCA_FILE} -CAkey ${K8SCA_KEY_FILE} -CAcreateserial -out ${CRT_FILE} -days 5000 -sha256 -extfile /tmp/server-extfile.cnf
 }
 
