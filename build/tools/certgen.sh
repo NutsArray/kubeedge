@@ -49,13 +49,45 @@ genCertAndKey() {
 }
 
 GenSpecificCaAndCert() {
-    ensureFolder
     readonly specificsubject=${SUBJECT:-/C=CN/ST=Zhejiang/L=Hangzhou/O=KubeEdge}
 
     if [ ! -n "$1" ];then
-        echo -e "You must set CA and Cert Files Name"
+        echo -e "You must set Output CA and Cert Files Name"
         exit 1
     fi
+
+    if [ ! -n "$2" ];then
+        ROOT_CA_FILE=/etc/kubernetes/pki/ca.crt
+        echo -e "Root CA's Path and Name are not set,use Default: "$ROOT_CA_FILE
+    else
+        ROOT_CA_FILE=$2
+    fi
+
+    if [ ! -n "$3" ];then
+        ROOT_CA_KEY_FILE=/etc/kubernetes/pki/ca.key
+        echo -e "Root Key's Path and Name are not set,use Default: "$ROOT_CA_KEY_FILE
+    else
+        ROOT_CA_KEY_FILE=$3
+    fi
+
+    if [ ! -n "$4" ];then
+        CA_FILE=${caPath}/$1"CA.crt"
+        echo -e "Output ca Path and Name are not set,use Default: "$CA_FILE
+    else
+        CA_FILE=$4/$1"CA.crt"
+    fi
+
+    if [ ! -n "$5" ];then
+        KEY_FILE=${certPath}/$1".key"
+        CSR_FILE=${certPath}/$1".csr"
+        CRT_FILE=${certPath}/$1".crt"
+        echo -e "Output certs Path and Name are not set,use Default: "$KEY_FILE","$CSR_FILE","$CRT_FILE
+    else
+        KEY_FILE=$4/$1".key"
+        CSR_FILE=$4/$1".csr"
+        CRT_FILE=$4/$1".crt"
+    fi
+
 
     if [ -z ${CLOUDCOREIPS} ]; then
         echo "You must set CLOUDCOREIPS Env,The environment variable is set to specify the IP addresses of all cloudcore"
@@ -63,17 +95,11 @@ GenSpecificCaAndCert() {
         exit 1
     fi
 
-    readonly CA_FILE=${caPath}/$1"CA.crt"
-    readonly KEY_FILE=${certPath}/$1".key"
-    readonly CSR_FILE=${certPath}/$1".csr"
-    readonly CRT_FILE=${certPath}/$1".crt"
 
-    echo "CAFile: $CA_FILE"
-    echo "CertFile: $CRT_FILE"
-    echo "PrivateKeyFile: $KEY_FILE"
 
-    readonly K8SCA_FILE=/etc/kubernetes/pki/ca.crt
-    readonly K8SCA_KEY_FILE=/etc/kubernetes/pki/ca.key
+    echo "Output CAFile: $CA_FILE"
+    echo "Output CertFile: $CRT_FILE"
+    echo "Output PrivateKeyFile: $KEY_FILE"
 
     index=1
     SUBJECTALTNAME="subjectAltName = IP.1:127.0.0.1"
@@ -83,7 +109,7 @@ GenSpecificCaAndCert() {
         SUBJECTALTNAME="${SUBJECTALTNAME}IP.${index}:${ip}"
     done
 
-    cp $K8SCA_FILE $CA_FILE
+    cp $ROOT_CA_FILE $CA_FILE
     echo $SUBJECTALTNAME > /tmp/server-extfile.cnf
 
     openssl genrsa -out ${KEY_FILE}  2048
@@ -91,7 +117,7 @@ GenSpecificCaAndCert() {
 
     # verify
     openssl req -in ${CSR_FILE} -noout -text
-    openssl x509 -req -in ${CSR_FILE} -CA ${K8SCA_FILE} -CAkey ${K8SCA_KEY_FILE} -CAcreateserial -out ${CRT_FILE} -days 5000 -sha256 -extfile /tmp/server-extfile.cnf
+    openssl x509 -req -in ${CSR_FILE} -CA ${ROOT_CA_FILE} -CAkey ${ROOT_CA_KEY_FILE} -CAcreateserial -out ${CRT_FILE} -days 5000 -sha256 -extfile /tmp/server-extfile.cnf
     #verify
     openssl x509 -in ${CRT_FILE} -text -noout
 }
