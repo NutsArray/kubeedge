@@ -212,7 +212,7 @@ function generate_router_cert {
   docker cp ${CLUSTER_NAME}-control-plane:/etc/kubernetes/pki/ca.crt $K8SCA_FILE
   docker cp ${CLUSTER_NAME}-control-plane:/etc/kubernetes/pki/ca.key $K8SCA_KEY_FILE
   cp /tmp/etc/kubernetes/pki/ca.crt "$CA_PATH"/routerCA.crt
-  export CLOUDCOREIPS=""
+  export CLOUDCOREIPS=${CLUSTER_NAME}
   "${KUBEEDGE_ROOT}"/build/tools/certgen.sh GenSpecificCaAndCert router $K8SCA_FILE $K8SCA_KEY_FILE "$CA_PATH" "$CERT_PATH"
   unset CLOUDCOREIPS=""
 }
