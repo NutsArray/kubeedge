@@ -15,7 +15,6 @@ import (
 
 	routerConfig "github.com/kubeedge/kubeedge/cloud/pkg/router/config"
 	"github.com/kubeedge/kubeedge/cloud/pkg/router/utils"
-	"github.com/kubeedge/kubeedge/pkg/util/validation"
 )
 
 var (
@@ -39,10 +38,6 @@ func InitHandler() {
 	RestHandlerInstance.bindAddress = routerConfig.Config.Address
 	RestHandlerInstance.port = int(routerConfig.Config.Port)
 	RestHandlerInstance.securePort = int(routerConfig.Config.SecurePort)
-	if validation.IsValidPortNum(RestHandlerInstance.port) != nil &&
-		validation.IsValidPortNum(RestHandlerInstance.securePort) != nil {
-		RestHandlerInstance.port = 10005
-	}
 
 	klog.Infof("rest init: %v", RestHandlerInstance)
 }
@@ -51,11 +46,13 @@ func (rh *RestHandler) Serve() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", rh.httpHandler)
 
-	if validation.IsValidPortNum(int(routerConfig.Config.Port)) == nil {
+	// If Config.Port set to 0,the secure port is closed
+	if int(routerConfig.Config.Port) != 0 {
 		go startInSecureServer(rh)
 	}
 
-	if validation.IsValidPortNum(int(routerConfig.Config.SecurePort)) == nil {
+	// If set to 0 , the secure port is closed
+	if int(routerConfig.Config.SecurePort) != 0 {
 		go startSecureServer(rh)
 	}
 }

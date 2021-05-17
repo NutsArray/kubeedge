@@ -43,6 +43,7 @@ func ValidateCloudCoreConfiguration(c *v1alpha1.CloudCoreConfig) field.ErrorList
 	allErrs = append(allErrs, ValidateModuleDynamicController(*c.Modules.DynamicController)...)
 	allErrs = append(allErrs, ValidateLeaderElectionConfiguration(*c.LeaderElection)...)
 	allErrs = append(allErrs, ValidateModuleCloudStream(*c.Modules.CloudStream)...)
+	allErrs = append(allErrs, ValidateModuleRouter(*c.Modules.Router)...)
 	return allErrs
 }
 
@@ -196,6 +197,33 @@ func ValidateKubeAPIConfig(k v1alpha1.KubeAPIConfig) field.ErrorList {
 	}
 	if k.KubeConfig != "" && !utilvalidation.FileIsExist(k.KubeConfig) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("kubeconfig"), k.KubeConfig, "kubeconfig not exist"))
+	}
+	return allErrs
+}
+
+// ValidateModuleRouter validates `d` and returns an errorList if it is invalid
+func ValidateModuleRouter(d v1alpha1.Router) field.ErrorList {
+	if !d.Enable {
+		return field.ErrorList{}
+	}
+
+	allErrs := field.ErrorList{}
+	if utilvalidation.IsValidPortNum(int(d.Port)) != nil &&
+		utilvalidation.IsValidPortNum(int(d.SecurePort)) != nil {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("port"), d.Port, "Router does not have valid port"))
+		klog.Warningf("Router does not have valid port")
+	}
+
+	if utilvalidation.IsValidPortNum(int(d.SecurePort)) == nil {
+		if !utilvalidation.FileIsExist(d.TLSRouterPrivateKeyFile) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("TLSRouterPrivateKeyFile"), d.TLSRouterPrivateKeyFile, "TLSRouterPrivateKeyFile not exist"))
+		}
+		if !utilvalidation.FileIsExist(d.TLSRouterCertFile) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("TLSRouterCertFile"), d.TLSRouterCertFile, "TLSRouterCertFile not exist"))
+		}
+		if !utilvalidation.FileIsExist(d.TLSRouterCAFile) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("TLSRouterCAFile"), d.TLSRouterCAFile, "TLSRouterCAFile not exist"))
+		}
 	}
 	return allErrs
 }
