@@ -194,10 +194,6 @@ function generate_streamserver_cert {
 }
 
 function generate_router_cert {
-    if [ ! -n "$1" ];then
-        echo -e "You must set CA and Cert Files Name"
-        exit 1
-    fi
   CA_PATH=${CA_PATH:-/tmp/etc/kubeedge/ca}
   CERT_PATH=${CERT_PATH:-/tmp/etc/kubeedge/certs}
   K8SCA_FILE=/tmp/etc/kubernetes/pki/ca.crt
@@ -248,7 +244,7 @@ create_objectsync_crd
 create_rule_crd
 
 generate_streamserver_cert
-./build/tools/certgen.sh GenSpecificCaAndCert router
+generate_router_cert
 
 start_cloudcore
 
