@@ -77,9 +77,9 @@ GenSpecificCaAndCert() {
     fi
 
     if [ -n "$5" ];then
-        KEY_FILE=$4/$1".key"
-        CSR_FILE=$4/$1".csr"
-        CRT_FILE=$4/$1".crt"
+        KEY_FILE=$5/$1".key"
+        CSR_FILE=$5/$1".csr"
+        CRT_FILE=$5/$1".crt"
     else
         KEY_FILE=${certPath}/$1".key"
         CSR_FILE=${certPath}/$1".csr"
