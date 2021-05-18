@@ -87,13 +87,6 @@ GenSpecificCaAndCert() {
         echo -e "Output certs Path and Name are not set,use Default: "$KEY_FILE","$CSR_FILE","$CRT_FILE
     fi
 
-
-    if [ -z ${CLOUDCOREIPS} ]; then
-        echo "You must set CLOUDCOREIPS Env,The environment variable is set to specify the IP addresses of all cloudcore"
-        echo "If there are more than one IP need to be separated with space."
-        exit 1
-    fi
-
     echo "Output CAFile: $CA_FILE"
     echo "Output CertFile: $CRT_FILE"
     echo "Output PrivateKeyFile: $KEY_FILE"
