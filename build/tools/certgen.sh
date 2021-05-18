@@ -50,42 +50,41 @@ genCertAndKey() {
 
 GenSpecificCaAndCert() {
     readonly specificsubject=${SUBJECT:-/C=CN/ST=Zhejiang/L=Hangzhou/O=KubeEdge}
-
     if [ ! -n "$1" ];then
         echo -e "You must set Output CA and Cert Files Name"
         exit 1
     fi
 
-    if [ ! -n "$2" ];then
-        ROOT_CA_FILE=/etc/kubernetes/pki/ca.crt
-        echo -e "Root CA's Path and Name are not set,use Default: "$ROOT_CA_FILE
-    else
+    if [ -n "$2" ];then
         ROOT_CA_FILE=$2
-    fi
-
-    if [ ! -n "$3" ];then
-        ROOT_CA_KEY_FILE=/etc/kubernetes/pki/ca.key
-        echo -e "Root Key's Path and Name are not set,use Default: "$ROOT_CA_KEY_FILE
     else
-        ROOT_CA_KEY_FILE=$3
+        ROOT_CA_FILE=/etc/kubernetes/pki/ca.crt
+        echo -e "Root CA's path and name are not set, use default: "$ROOT_CA_FILE
     fi
 
-    if [ ! -n "$4" ];then
+    if [ -n "$3" ];then
+        ROOT_CA_KEY_FILE=$3
+    else
+        ROOT_CA_KEY_FILE=/etc/kubernetes/pki/ca.key
+        echo -e "Root Key's path and name are not set, use default: "$ROOT_CA_KEY_FILE
+    fi
+
+    if [ -n "$4" ];then
+        CA_FILE=$4/$1"CA.crt"
+    else
         CA_FILE=${caPath}/$1"CA.crt"
         echo -e "Output ca Path and Name are not set,use Default: "$CA_FILE
-    else
-        CA_FILE=$4/$1"CA.crt"
     fi
 
-    if [ ! -n "$5" ];then
+    if [ -n "$5" ];then
+        KEY_FILE=$4/$1".key"
+        CSR_FILE=$4/$1".csr"
+        CRT_FILE=$4/$1".crt"
+    else
         KEY_FILE=${certPath}/$1".key"
         CSR_FILE=${certPath}/$1".csr"
         CRT_FILE=${certPath}/$1".crt"
         echo -e "Output certs Path and Name are not set,use Default: "$KEY_FILE","$CSR_FILE","$CRT_FILE
-    else
-        KEY_FILE=$4/$1".key"
-        CSR_FILE=$4/$1".csr"
-        CRT_FILE=$4/$1".crt"
     fi
 
 
@@ -94,8 +93,6 @@ GenSpecificCaAndCert() {
         echo "If there are more than one IP need to be separated with space."
         exit 1
     fi
-
-
 
     echo "Output CAFile: $CA_FILE"
     echo "Output CertFile: $CRT_FILE"
@@ -181,4 +178,4 @@ $(pr -T -o 4 ${certPath}/${name}.key)
 EOF
 }
 
-$1 $2
+$1 "$2" "$3" "$4" "$5" "$6"
