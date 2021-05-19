@@ -3,6 +3,7 @@ package listener
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -10,9 +11,14 @@ import (
 	"sync"
 	"time"
 
+	hubconfig "github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/config"
+	certutil "k8s.io/client-go/util/cert"
+
 	"github.com/google/uuid"
 	"k8s.io/klog/v2"
 
+	"github.com/kubeedge/kubeedge/cloud/pkg/cloudhub"
+	hubHttpServer "github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/servers/httpserver"
 	routerConfig "github.com/kubeedge/kubeedge/cloud/pkg/router/config"
 	"github.com/kubeedge/kubeedge/cloud/pkg/router/utils"
 )
@@ -53,7 +59,11 @@ func (rh *RestHandler) Serve() {
 
 	// If set to 0 , the secure port is closed
 	if int(routerConfig.Config.SecurePort) != 0 {
-		go startSecureServer(rh)
+		// TODO: Will improve in the future
+		ok := <-cloudhub.DoneTLSRouterCerts
+		if ok {
+			go startSecureServer(rh)
+		}
 	}
 }
 
@@ -71,26 +81,57 @@ func startInSecureServer(rh *RestHandler) {
 }
 
 func startSecureServer(rh *RestHandler) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", rh.httpHandler)
+	var data []byte
+	var key []byte
+	var cert []byte
+	if routerConfig.Config.Ca != nil {
+		data = routerConfig.Config.Ca
+		klog.Info("Succeed in loading RouterCA from local directory")
+	} else {
+		data = hubconfig.Config.Ca
+		klog.Info("Succeed in loading RouterCA from CloudHub")
+	}
+
 	pool := x509.NewCertPool()
-	data, err := ioutil.ReadFile(routerConfig.Config.TLSRouterCAFile)
+	pool.AppendCertsFromPEM(pem.EncodeToMemory(&pem.Block{Type: certutil.CertificateBlockType, Bytes: data}))
+
+	if routerConfig.Config.Key != nil && routerConfig.Config.Cert != nil {
+		cert = routerConfig.Config.Cert
+		key = routerConfig.Config.Key
+		klog.Info("Succeed in loading RouterCert and Key from local directory")
+	} else {
+		klog.Info("Router's Cert and key don't exist in the path, and will be signed by Cloudhub's CA")
+		certDER, keyDER, err := hubHttpServer.SignCerts()
+		if err != nil {
+			klog.Errorf("Failed to sign router's certificate, error: %v", err)
+		}
+		cert = certDER
+		key = keyDER
+		klog.Info("Succeed in loading RouterCert and Key from CloudHub")
+	}
+
+	certificate, err := tls.X509KeyPair(pem.EncodeToMemory(&pem.Block{Type: certutil.CertificateBlockType, Bytes: cert}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: key}))
 	if err != nil {
-		klog.Fatalf("Read tls router ca file error %v", err)
+		klog.Error("Failed to load TLSRouterCert and Key")
 		return
 	}
-	pool.AppendCertsFromPEM(data)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", rh.httpHandler)
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", rh.bindAddress, rh.securePort),
 		Handler: mux,
 		TLSConfig: &tls.Config{
-			ClientCAs: pool,
-			// Populate PeerCertificates in requests, but don't reject connections without verified certificates
-			ClientAuth: tls.RequestClientCert,
+			ClientCAs:    pool,
+			Certificates: []tls.Certificate{certificate},
+			ClientAuth:   tls.RequestClientCert,
+			MinVersion:   tls.VersionTLS12,
+			CipherSuites: []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256},
 		},
 	}
+
 	klog.Infof("Router server listening in secure port %d...", rh.securePort)
-	if err := server.ListenAndServeTLS(routerConfig.Config.TLSRouterCertFile, routerConfig.Config.TLSRouterPrivateKeyFile); err != nil {
+	if err := server.ListenAndServeTLS("", ""); err != nil {
 		klog.Errorf("Start secure rest endpoint failed, err: %v", err)
 	}
 }

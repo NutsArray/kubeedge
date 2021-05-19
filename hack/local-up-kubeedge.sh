@@ -192,29 +192,6 @@ function generate_streamserver_cert {
   openssl req -new -key ${STREAM_KEY_FILE} -subj ${streamsubject} -out ${STREAM_CSR_FILE}
   openssl x509 -req -in ${STREAM_CSR_FILE} -CA ${K8SCA_FILE} -CAkey ${K8SCA_KEY_FILE} -CAcreateserial -out ${STREAM_CRT_FILE} -days 5000 -sha256 -extfile /tmp/server-extfile.cnf
 }
-
-function generate_router_cert {
-  CA_PATH=${CA_PATH:-/tmp/etc/kubeedge/ca}
-  CERT_PATH=${CERT_PATH:-/tmp/etc/kubeedge/certs}
-  K8SCA_FILE=/tmp/etc/kubernetes/pki/ca.crt
-  K8SCA_KEY_FILE=/tmp/etc/kubernetes/pki/ca.key
-
-  if [[ ! -d /tmp/etc/kubernetes/pki ]] ; then
-    mkdir -p /tmp/etc/kubernetes/pki
-  fi
-  if [[ ! -d $CA_PATH ]] ; then
-	mkdir -p $CA_PATH
-  fi
-  if [[ ! -d $CERT_PATH ]] ; then
-	mkdir -p $CERT_PATH
-  fi
-
-  docker cp ${CLUSTER_NAME}-control-plane:/etc/kubernetes/pki/ca.crt $K8SCA_FILE
-  docker cp ${CLUSTER_NAME}-control-plane:/etc/kubernetes/pki/ca.key $K8SCA_KEY_FILE
-  cp /tmp/etc/kubernetes/pki/ca.crt "$CA_PATH"/routerCA.crt
-  "${KUBEEDGE_ROOT}"/build/tools/certgen.sh GenSpecificCaAndCert router $K8SCA_FILE $K8SCA_KEY_FILE "$CA_PATH" "$CERT_PATH"
-}
-
 cleanup
 
 source "${KUBEEDGE_ROOT}/hack/lib/install.sh"
@@ -242,7 +219,6 @@ create_objectsync_crd
 create_rule_crd
 
 generate_streamserver_cert
-generate_router_cert
 
 start_cloudcore
 

@@ -211,18 +211,17 @@ func ValidateModuleRouter(d v1alpha1.Router) field.ErrorList {
 	if utilvalidation.IsValidPortNum(int(d.Port)) != nil &&
 		utilvalidation.IsValidPortNum(int(d.SecurePort)) != nil {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("port"), d.Port, "Router does not have valid port"))
-		klog.Warningf("Router does not have valid port")
 	}
 
 	if utilvalidation.IsValidPortNum(int(d.SecurePort)) == nil {
 		if !utilvalidation.FileIsExist(d.TLSRouterPrivateKeyFile) {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("TLSRouterPrivateKeyFile"), d.TLSRouterPrivateKeyFile, "TLSRouterPrivateKeyFile not exist"))
+			klog.Warningf("TLSRouterPrivateKeyFile does not exist in %s, will load from secret", d.TLSRouterPrivateKeyFile)
 		}
 		if !utilvalidation.FileIsExist(d.TLSRouterCertFile) {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("TLSRouterCertFile"), d.TLSRouterCertFile, "TLSRouterCertFile not exist"))
+			klog.Warningf("TLSRouterCertFile does not exist in %s, will load from secret", d.TLSRouterCertFile)
 		}
 		if !utilvalidation.FileIsExist(d.TLSRouterCAFile) {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("TLSRouterCAFile"), d.TLSRouterCAFile, "TLSRouterCAFile not exist"))
+			klog.Warningf("TLSRouterCAFile does not exist in %s, will load from secret", d.TLSRouterCAFile)
 		}
 	}
 	return allErrs
